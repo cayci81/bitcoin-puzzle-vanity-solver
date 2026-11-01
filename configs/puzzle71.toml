@@ -1,0 +1,25 @@
+# Puzzle #71 configuration file.
+# Load via CLI: ./puzzle71_solver --config configs/puzzle71.toml
+# Or click "Load from config" in puzzle71_gui.
+
+[puzzle]
+address     = "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU"
+range_start = "400000000000000000"
+range_end   = "7fffffffffffffffff"
+
+[search]
+chunk_size             = 100000000
+gpu_stride             = 262144
+max_collision_retries  = 8
+seed                   = 0
+
+[engine]
+type   = "gpu"
+gpu_id = 0
+
+[output]
+dir = "./puzzle71_results"
+
+[filters]
+prefix_hex = ""
+prefix_b58 = ""
