@@ -255,26 +255,26 @@ const char* ExitReasonToString(SolverExitReason reason) {
 
 void PrintHelp() {
   std::cerr
-      << "Usage: puzzle71_solver [options]\n\n"
-      << "Options:\n"
-      << "  --config <path>                  Load options from TOML config file\n"
-      << "  --address <b58>                  Target compressed P2PKH Bitcoin address\n"
-      << "  --range-hex <start_hex>:<end_hex> Inclusive hex keyspace range\n"
-      << "  --chunk-size <N>                 Keys per chunk (default: 100000000)\n"
-      << "  --gpu-stride <N>                 GPU stride alignment (default: 262144)\n"
-      << "  --max-collision-retries <N>      Random collision retries before gap fallback (default: 8)\n"
-      << "  --seed <N>                       RNG seed (0 = derive from current time)\n"
-      << "  --output-dir <dir>               Directory for scanned_ranges.jsonl & found_matches.jsonl\n"
-      << "  --engine <cpu|gpu>               Execution engine (default: cpu)\n"
-      << "  --gpu-id <id>                    GPU device ID (default: 0)\n"
-      << "  --puzzle <id>                    Bitcoin puzzle ID from puzzles.json (auto range & address)\n"
-      << "  --max-chunks <N>                 Stop after N chunks (0 = unlimited)\n"
-      << "  --prefix-hex <csv>               Comma-separated hash160 hex prefixes (e.g. 5abc,6123)\n"
-      << "  --prefix-b58 <prefix>            Base58 address prefix (repeatable, e.g. 1PWo3)\n"
-      << "  --address-file <path>            File of full P2PKH addresses (one per line, # comments)\n"
-      << "  --prefix-file <path>             File of hex or Base58 prefixes (one per line, # comments)\n"
-      << "  --help                           Show this help message and exit\n"
-      << "  --version                        Show version string and exit\n";
+      << "Kullanım: puzzle71_solver [seçenekler]\n\n"
+      << "Seçenekler:\n"
+      << "  --config <dosya>                 TOML yapılandırma dosyasından ayarları yükler\n"
+      << "  --address <b58>                  Hedef sıkıştırılmış P2PKH Bitcoin adresi\n"
+      << "  --range-hex <başlangıç>:<bitiş>  Onaltılık (hex) anahtar aralığı\n"
+      << "  --chunk-size <N>                 Parça başına anahtar sayısı (varsayılan: 100000000)\n"
+      << "  --gpu-stride <N>                 GPU adım hizalaması (varsayılan: 262144)\n"
+      << "  --max-collision-retries <N>      Rastgele çakışma deneme sınırı (varsayılan: 8)\n"
+      << "  --seed <N>                       RNG tohum değeri (0 = sistem saatinden türetilir)\n"
+      << "  --output-dir <dizin>             scanned_ranges ve found_matches çıktı dizini\n"
+      << "  --engine <cpu|gpu>               Hesaplama motoru (varsayılan: cpu)\n"
+      << "  --gpu-id <id>                    CUDA GPU cihaz kimliği (varsayılan: 0)\n"
+      << "  --puzzle <id>                    puzzles.json dosyasından bulmaca kimliği (otomatik aralık/adres)\n"
+      << "  --max-chunks <N>                 N parça sonra durur (0 = sınırsız)\n"
+      << "  --prefix-hex <csv>               Virgülle ayrılmış hash160 hex önekleri (örn. 5abc,6123)\n"
+      << "  --prefix-b58 <önek>              Base58 adres öneki (tekrarlanabilir, örn. 1PWo3)\n"
+      << "  --address-file <dosya>           P2PKH adresleri listesi içeren metin dosyası (# yorum destekli)\n"
+      << "  --prefix-file <dosya>            Hex veya Base58 önekleri listesi içeren metin dosyası\n"
+      << "  --help                           Bu yardım mesajını gösterir ve çıkar\n"
+      << "  --version                        Sürüm bilgisini gösterir ve çıkar\n";
 }
 
 void PrintVersion() {
@@ -569,6 +569,7 @@ SolverContext::SolverContext(const CliOptions& opts) : options(opts) {
     if (std::find(v.begin(), v.end(), s) == v.end()) v.push_back(s);
   };
   if (!options.address.empty()) add_unique(full_addresses, options.address);
+  for (const auto& a : options.address_list) add_unique(full_addresses, a);
   if (!options.address_file.empty()) {
     for (const auto& a : TargetListLoader::loadAddresses(options.address_file)) {
       add_unique(full_addresses, a);
@@ -699,6 +700,17 @@ SolverContext::SolverContext(const CliOptions& opts) : options(opts) {
   solver_cfg.worker_id = 0;
   solver_cfg.max_chunks = options.max_chunks;
   solver_cfg.on_prefix_found = options.on_prefix_found;
+  if (options.range_start <= options.range_end) {
+    Int span = options.range_start.distanceTo(options.range_end);
+    span.AddOne();
+    solver_cfg.total_keyspace_double = span.ToDouble();
+    solver_cfg.total_keyspace_str = span.GetBase10();
+    if (span.bits64[1] == 0 && span.bits64[2] == 0 && span.bits64[3] == 0 && span.bits64[4] == 0) {
+      solver_cfg.total_keyspace = span.bits64[0];
+    } else {
+      solver_cfg.total_keyspace = UINT64_MAX;
+    }
+  }
 
   solver = std::make_unique<PuzzleSolver>(
       engine, generator, logger, matcher, writer, solver_cfg);

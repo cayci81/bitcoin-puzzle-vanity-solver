@@ -11,7 +11,8 @@ It includes:
 - **Multi-Target Vanity & Batch Matching** (`TargetListLoader`, `HexPrefixFilter`, `AddressMatcher`) supporting hundreds of target addresses (`--address-file`) and vanity prefixes (`--prefix-file`).
 - **Human-Readable Match Outputs** (`prefix_found.txt` and `found_matches.jsonl`) recording vanity matches with timestamp, matched prefix, address, and private key.
 - **Crypto Intelligence & Caching** (`NetworkAPI`, `PuzzleDatabase`) with asynchronous balance and transaction count queries via Blockchain.info API, protected by in-memory caching and 1-second rate-limiting.
-- **CLI & Win32/DirectX11 Dear ImGui GUI** (`puzzle71_solver` and `puzzle71_gui`) with real-time atomic progress telemetry, puzzle presets (`puzzles.json`), and live vanity search dashboard.
+- **Search Statistics & Progress Telemetry** (`PuzzleSolver`, `GuiController`) computing 256-bit total keyspace size, scanned key counter, and exact percentage progress.
+- **Turkish Localization & Multi-Address GUI File Loading** (`puzzle71_gui`, `puzzle71_solver`) supporting single or batch address file loading directly from Windows file dialogs, with fully localized Turkish interface and help texts.
 
 ---
 
@@ -104,11 +105,14 @@ ctest --test-dir build-cuda -C Release --output-on-failure
 ```bash
 ./build-cuda/Release/puzzle71_gui.exe
 ```
-- **Puzzle Preset Dropdown**: Choose any Bitcoin puzzle (Puzzles #1 to #160). The address, range start, range end, and bit width auto-populate, and an asynchronous query checks the balance.
-- **Address Intelligence**: Click **"Check Balance"** to query transaction count and balance. Displays `Fresh / Unused`, `Used (X txs) - Empty`, or green `FUNDED! X BTC`.
-- **Live Vanity Search Dashboard**: Discovered vanity prefixes are logged in `prefix_found.txt` and displayed in real time in a scrollable table with their transaction count and funded status. If any found address has funds, a prominent alert triggers.
-- Use **"Demo range AB00:ABFF"** to verify an instant full match on key `0xABCD`.
-- Select `cpu` or `gpu` in the **Engine** dropdown and click **Start**.
+- **Türkçe Arayüz & Kolay Kullanım**: Tüm etiketler, butonlar, durumlar ve telemetri paneli Türkçe olarak tasarlanmıştır.
+- **Toplu Adres Yükleme (Adres Dosyası)**: "Adres Dosyası Yükle (.txt)" butonu ile Windows dosya seçici üzerinden yüzlerce hedef adresi içeren bir `.txt` dosyasını kolayca yükleyebilir ve tek seferde tarayabilirsiniz.
+- **Detaylı Arama İstatistikleri**: Seçilen aralığın toplam anahtar alanı (256-bit tam hassasiyetle), taranan anahtar sayısı ve genel ilerleme yüzdesi (Progress Bar) gerçek zamanlı gösterilir.
+- **Puzzle Önayarı (Preset)**: Açılır listeden Puzzle #1'den #160'a kadar tüm Bitcoin bulmacalarını seçebilirsiniz. Adres ve aralık otomatik doldurulur ve bakiye asenkron sorgulanır.
+- **Adres İstihbaratı**: "Bakiye Sorgula" butonu ile adresin blockchain.info üzerindeki bakiyesi ve işlem geçmişi anında görüntülenir (`Yeni / Kullanılmamış`, `Kullanılmış - Boş`, ya da yeşil `BAKİYELİ! X BTC`).
+- **Canlı Vanity Arama Paneli**: Keşfedilen vanity önekleri gerçek zamanlı olarak `prefix_found.txt` dosyasına yazılır ve GUI tablosunda işlem sayıları ile birlikte listelenir. Bakiyeli bir adres bulunursa anında alarm verir.
+- **Hızlı Test**: "Demo Aralığı AB00:ABFF" butonuna tıklayarak bilinen `0xABCD` anahtarı üzerinde anında eşleşme testi yapabilirsiniz.
+- **Motor Seçimi**: CPU veya GPU seçimi yaparak "Başlat" butonuna basın.
 
 ---
 

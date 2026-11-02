@@ -23,6 +23,7 @@ namespace puzzle::cli {
 
 struct CliOptions {
   std::string address;                    // full target address (optional if prefix_b58 set)
+  std::vector<std::string> address_list;  // multiple target addresses (e.g. from GUI file load)
   std::vector<std::string> prefix_b58;    // repeatable --prefix-b58 values
   std::string prefix_hex_csv;             // comma-separated hex prefixes for HexPrefixFilter
   std::filesystem::path address_file;     // --address-file: one full P2PKH address per line

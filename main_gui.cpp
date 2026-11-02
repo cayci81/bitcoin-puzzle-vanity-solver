@@ -2,6 +2,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <commdlg.h>
 #include <d3d11.h>
 #include <shellapi.h>
 #include <tchar.h>
@@ -28,6 +29,7 @@
 #include "GuiController.h"
 #include "PuzzleDatabase.h"
 #include "NetworkAPI.h"
+#include "TargetListLoader.h"
 #include "cli.h"
 
 // Forward declare message handler from imgui_impl_win32.cpp
@@ -170,7 +172,7 @@ struct AppState {
   char output_dir_buf[512] = "./puzzle71_results";
   char prefix_hex_buf[256] = {0};
   char last_error_buf[256] = {0};   // snapshot of getStats().last_error
-  char last_action_buf[128] = "Last action: none";
+  char last_action_buf[128] = "Son eylem: yok";
   GuiState prev_state      = GuiState::Idle;
   // Throttled file existence cache (polled at most 1 Hz or on state/match change)
   std::chrono::steady_clock::time_point last_fs_check{};
@@ -178,6 +180,10 @@ struct AppState {
   GuiState last_fs_state   = GuiState::Idle;
   bool cached_has_matches  = false;
   bool cached_has_log      = false;
+
+  // Multi-address list
+  std::vector<std::string> loaded_addresses;
+  char address_file_name[MAX_PATH] = "";
 
   // Puzzles and Balance Intelligence
   struct FoundPrefixEntry {
@@ -191,7 +197,7 @@ struct AppState {
   int selected_puzzle_idx = -1;
   std::future<std::map<std::string, AddressInfo>> balance_future;
   bool checking_balance = false;
-  std::string balance_status = "Not checked";
+  std::string balance_status = "Kontrol edilmedi";
   bool is_funded = false;
   AddressInfo current_address_info{};
 
@@ -205,7 +211,7 @@ struct AppState {
 };
 
 void DrawConfigPanel(AppState& app, const GuiStats& stats) {
-  ImGui::Text("Configuration");
+  ImGui::Text("Yapılandırma");
   ImGui::Separator();
 
   const bool can_edit = (stats.state == GuiState::Idle ||
@@ -218,12 +224,12 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
 
   if (!app.puzzles.empty()) {
     std::string preview = (app.selected_puzzle_idx >= 0 && app.selected_puzzle_idx < static_cast<int>(app.puzzles.size()))
-                          ? "Puzzle #" + std::to_string(app.puzzles[app.selected_puzzle_idx].id) + " (" + std::to_string(app.puzzles[app.selected_puzzle_idx].bits) + " bits)"
-                          : "Select Bitcoin Puzzle...";
-    if (ImGui::BeginCombo("Puzzle Preset", preview.c_str())) {
+                          ? "Puzzle #" + std::to_string(app.puzzles[app.selected_puzzle_idx].id) + " (" + std::to_string(app.puzzles[app.selected_puzzle_idx].bits) + " bit)"
+                          : "Bitcoin Puzzle Seçiniz...";
+    if (ImGui::BeginCombo("Puzzle Önayarı", preview.c_str())) {
       for (int i = 0; i < static_cast<int>(app.puzzles.size()); ++i) {
         const bool is_selected = (app.selected_puzzle_idx == i);
-        std::string label = "Puzzle #" + std::to_string(app.puzzles[i].id) + " (" + std::to_string(app.puzzles[i].bits) + " bits, " + std::to_string(app.puzzles[i].reward) + " BTC)";
+        std::string label = "Puzzle #" + std::to_string(app.puzzles[i].id) + " (" + std::to_string(app.puzzles[i].bits) + " bit, " + std::to_string(app.puzzles[i].reward) + " BTC)";
         if (ImGui::Selectable(label.c_str(), is_selected)) {
           app.selected_puzzle_idx = i;
           const auto& p = app.puzzles[i];
@@ -233,7 +239,7 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
           // Auto trigger async balance check on selection
           if (!p.address.empty()) {
             app.checking_balance = true;
-            app.balance_status = "Checking balance...";
+            app.balance_status = "Bakiye sorgulanıyor...";
             std::string addr = p.address;
             app.balance_future = std::async(std::launch::async, [addr]() {
               return NetworkAPI::QueryBalances({addr});
@@ -248,7 +254,7 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
     }
   }
 
-  if (ImGui::SmallButton("Load Puzzle 71 range")) {
+  if (ImGui::SmallButton("Puzzle 71 Aralığını Yükle")) {
     std::strncpy(app.address_buf,
                  "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU",
                  sizeof(app.address_buf) - 1);
@@ -263,7 +269,7 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
     app.gpu_stride_int = 262144;
   }
   ImGui::SameLine();
-  if (ImGui::SmallButton("Demo range AB00:ABFF")) {
+  if (ImGui::SmallButton("Demo Aralığı AB00:ABFF")) {
     std::strncpy(app.address_buf,
                  "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU",
                  sizeof(app.address_buf) - 1);
@@ -278,7 +284,7 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
     app.gpu_stride_int = 256;
   }
   ImGui::SameLine();
-  if (ImGui::SmallButton("Load from config")) {
+  if (ImGui::SmallButton("Ayar Dosyasından Yükle")) {
     app.last_error_buf[0] = '\0';
     try {
       std::filesystem::path cfg_path = "configs/puzzle71.toml";
@@ -306,22 +312,56 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
         app.engine_idx = 0;
       }
       std::snprintf(app.last_action_buf, sizeof(app.last_action_buf),
-                    "Loaded %s", cfg_path.string().c_str());
+                    "Yüklendi: %s", cfg_path.string().c_str());
     } catch (const std::exception& e) {
       std::snprintf(app.last_error_buf, sizeof(app.last_error_buf),
-                    "Config load failed: %s", e.what());
+                    "Ayar dosyası yüklenemedi: %s", e.what());
     }
   }
-  ImGui::InputText("Address", app.address_buf, sizeof(app.address_buf));
+  ImGui::InputText("Hedef Adres", app.address_buf, sizeof(app.address_buf));
   ImGui::SameLine();
-  if (ImGui::SmallButton("Check Balance")) {
+  if (ImGui::SmallButton("Bakiye Sorgula")) {
     if (std::strlen(app.address_buf) > 0) {
       app.checking_balance = true;
-      app.balance_status = "Checking blockchain.info...";
+      app.balance_status = "blockchain.info sorgulanıyor...";
       std::string addr = app.address_buf;
       app.balance_future = std::async(std::launch::async, [addr]() {
         return NetworkAPI::QueryBalances({addr});
       });
+    }
+  }
+
+  // Multi-address list file selector
+  if (ImGui::Button("Adres Dosyası Yükle (.txt)")) {
+    char szFile[MAX_PATH] = "";
+    OPENFILENAMEA ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = nullptr;
+    ofn.lpstrFilter = "Metin Dosyaları (*.txt)\0*.txt\0Tüm Dosyalar (*.*)\0*.*\0";
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = sizeof(szFile);
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+    if (GetOpenFileNameA(&ofn)) {
+      try {
+        app.loaded_addresses = puzzle::TargetListLoader::loadAddresses(szFile);
+        std::snprintf(app.address_file_name, sizeof(app.address_file_name), "%s",
+                      std::filesystem::path(szFile).filename().string().c_str());
+        std::snprintf(app.last_action_buf, sizeof(app.last_action_buf),
+                      "Yüklendi: %zu adres (%s)", app.loaded_addresses.size(), app.address_file_name);
+      } catch (const std::exception& e) {
+        std::snprintf(app.last_error_buf, sizeof(app.last_error_buf),
+                      "Dosya yükleme hatası: %s", e.what());
+      }
+    }
+  }
+  if (!app.loaded_addresses.empty()) {
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Yüklü: %zu adres (%s)",
+                       app.loaded_addresses.size(), app.address_file_name);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Temizle")) {
+      app.loaded_addresses.clear();
+      app.address_file_name[0] = '\0';
     }
   }
 
@@ -339,41 +379,41 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
             app.is_funded = true;
             double btc = static_cast<double>(info.balance_satoshis) / 1e8;
             char btc_str[80];
-            std::snprintf(btc_str, sizeof(btc_str), "FUNDED! %.8f BTC (%u txs)", btc, info.tx_count);
+            std::snprintf(btc_str, sizeof(btc_str), "BAKİYELİ! %.8f BTC (%u işlem)", btc, info.tx_count);
             app.balance_status = btc_str;
           } else if (info.tx_count > 0) {
             app.is_funded = false;
-            app.balance_status = "Used (" + std::to_string(info.tx_count) + " txs) - Empty";
+            app.balance_status = "Kullanılmış (" + std::to_string(info.tx_count) + " işlem) - Boş";
           } else {
             app.is_funded = false;
-            app.balance_status = "Fresh / Unused";
+            app.balance_status = "Yeni / Kullanılmamış";
           }
         } else {
-          app.balance_status = "Address not found";
+          app.balance_status = "Adres bulunamadı";
         }
       } catch (const std::exception& e) {
         app.checking_balance = false;
-        app.balance_status = std::string("Check failed: ") + e.what();
+        app.balance_status = std::string("Sorgulama başarısız: ") + e.what();
       }
     }
   }
 
   if (app.is_funded) {
-    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Status: %s", app.balance_status.c_str());
+    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Durum: %s", app.balance_status.c_str());
   } else if (app.current_address_info.tx_count > 0) {
-    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Status: %s", app.balance_status.c_str());
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Durum: %s", app.balance_status.c_str());
   } else {
-    ImGui::TextDisabled("Status: %s", app.balance_status.c_str());
+    ImGui::TextDisabled("Durum: %s", app.balance_status.c_str());
   }
 
-  ImGui::InputText("Range Start (hex)", app.range_start_buf, sizeof(app.range_start_buf));
-  ImGui::InputText("Range End (hex)", app.range_end_buf, sizeof(app.range_end_buf));
-  ImGui::InputScalar("Chunk Size", ImGuiDataType_U64, &app.chunk_size_u64);
-  ImGui::TextDisabled("(CPU: 10M-50M recommended. GPU: 100M-1B recommended.)");
-  ImGui::InputInt("GPU Stride", &app.gpu_stride_int);
+  ImGui::InputText("Başlangıç Aralığı (hex)", app.range_start_buf, sizeof(app.range_start_buf));
+  ImGui::InputText("Bitiş Aralığı (hex)", app.range_end_buf, sizeof(app.range_end_buf));
+  ImGui::InputScalar("Parça Boyutu (Chunk)", ImGuiDataType_U64, &app.chunk_size_u64);
+  ImGui::TextDisabled("(CPU: 10M-50M tavsiye edilir. GPU: 100M-1B tavsiye edilir.)");
+  ImGui::InputInt("GPU Adımı (Stride)", &app.gpu_stride_int);
   const char* engines[] = {"cpu", "gpu"};
 #ifdef PUZZLE71_ENABLE_CUDA
-  if (ImGui::Combo("Engine", &app.engine_idx, engines, 2)) {
+  if (ImGui::Combo("Hesaplama Motoru", &app.engine_idx, engines, 2)) {
     if (app.engine_idx == 1 && app.chunk_size_u64 == 10'000'000ULL) {
       app.chunk_size_u64 = 100'000'000ULL;
     } else if (app.engine_idx == 0 && app.chunk_size_u64 == 100'000'000ULL) {
@@ -382,7 +422,7 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
   }
 #else
   // gpu option visible but disabled
-  if (ImGui::Combo("Engine", &app.engine_idx, engines, 2)) {
+  if (ImGui::Combo("Hesaplama Motoru", &app.engine_idx, engines, 2)) {
     if (app.engine_idx == 1) {
       app.engine_idx = 0;
     }
@@ -390,10 +430,10 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
   if (app.engine_idx == 1) {
     app.engine_idx = 0;
   }
-  ImGui::TextDisabled("(CPU-only build. Rebuild with -DPUZZLE71_BUILD_CUDA=ON for GPU)");
+  ImGui::TextDisabled("(Yalnızca CPU derlemesi. GPU için -DPUZZLE71_BUILD_CUDA=ON ile derleyin)");
 #endif
-  ImGui::InputText("Output Dir", app.output_dir_buf, sizeof(app.output_dir_buf));
-  ImGui::InputText("Prefix Hex (csv)", app.prefix_hex_buf, sizeof(app.prefix_hex_buf));
+  ImGui::InputText("Çıktı Klasörü", app.output_dir_buf, sizeof(app.output_dir_buf));
+  ImGui::InputText("Hex Önek Filtresi (csv)", app.prefix_hex_buf, sizeof(app.prefix_hex_buf));
   ImGui::EndDisabled();
 
   ImGui::Spacing();
@@ -402,15 +442,16 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
   // Start button: enabled only when can_edit AND no controller running
   const bool can_start = can_edit;
   ImGui::BeginDisabled(!can_start);
-  if (ImGui::Button("Start", ImVec2(120, 0))) {
+  if (ImGui::Button("Başlat", ImVec2(120, 0))) {
     app.last_error_buf[0] = '\0';
     try {
       if (app.chunk_size_u64 == 0 || app.gpu_stride_int <= 0) {
-        throw std::invalid_argument("chunk_size and gpu_stride must be > 0");
+        throw std::invalid_argument("chunk_size ve gpu_stride > 0 olmalıdır");
       }
       // Build CliOptions from UI state
       puzzle::cli::CliOptions opts;
       opts.address        = app.address_buf;
+      opts.address_list   = app.loaded_addresses;
       opts.range_start    = RangeKey::FromHex(app.range_start_buf);
       opts.range_end      = RangeKey::FromHex(app.range_end_buf);
       opts.chunk_size     = app.chunk_size_u64;
@@ -448,11 +489,11 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
         char hms[16] = {0};
         FormatCurrentTimeHms(hms, sizeof(hms));
         std::snprintf(app.last_action_buf, sizeof(app.last_action_buf),
-                      "Started at %s", hms);
+                      "Başlatıldı: %s", hms);
       }
     } catch (const std::exception& e) {
       std::snprintf(app.last_error_buf, sizeof(app.last_error_buf),
-                    "Start failed: %s", e.what());
+                    "Başlatma başarısız: %s", e.what());
       app.controller.reset();
     }
   }
@@ -461,11 +502,11 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
   ImGui::SameLine();
   const bool can_stop = (stats.state == GuiState::Running);
   ImGui::BeginDisabled(!can_stop);
-  if (ImGui::Button("Stop", ImVec2(120, 0))) {
+  if (ImGui::Button("Durdur", ImVec2(120, 0))) {
     if (app.controller) {
       app.controller->requestStop();
       std::snprintf(app.last_action_buf, sizeof(app.last_action_buf),
-                    "Stopped by user");
+                    "Kullanıcı tarafından durduruldu");
     }
   }
   ImGui::EndDisabled();
@@ -484,41 +525,47 @@ void DrawTelemetryPanel(AppState& app, const GuiStats& stats) {
     char hms[16] = {0};
     FormatCurrentTimeHms(hms, sizeof(hms));
     std::snprintf(app.last_action_buf, sizeof(app.last_action_buf),
-                  "FOUND at %s", hms);
+                  "BULUNDU: %s", hms);
   }
   app.prev_state = stats.state;
 
-  ImGui::Text("Telemetry");
+  ImGui::Text("Telemetri & İstatistikler");
   ImGui::Separator();
 
   // State with color
   ImVec4 color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-  const char* state_str = "Idle";
+  const char* state_str = "Beklemede";
   switch (stats.state) {
-    case GuiState::Idle:      state_str = "Idle";      color = {0.7f, 0.7f, 0.7f, 1.0f}; break;
-    case GuiState::Running:   state_str = "Running";   color = {0.2f, 0.8f, 0.2f, 1.0f}; break;
-    case GuiState::Stopped:   state_str = "Stopped";   color = {1.0f, 0.7f, 0.2f, 1.0f}; break;
-    case GuiState::Found:     state_str = "FOUND";     color = {0.2f, 1.0f, 0.2f, 1.0f}; break;
-    case GuiState::Exhausted: state_str = "Exhausted"; color = {1.0f, 0.6f, 0.0f, 1.0f}; break;
-    case GuiState::Error:     state_str = "ERROR";     color = {1.0f, 0.2f, 0.2f, 1.0f}; break;
+    case GuiState::Idle:      state_str = "Beklemede";          color = {0.7f, 0.7f, 0.7f, 1.0f}; break;
+    case GuiState::Running:   state_str = "Çalışıyor";           color = {0.2f, 0.8f, 0.2f, 1.0f}; break;
+    case GuiState::Stopped:   state_str = "Durduruldu";         color = {1.0f, 0.7f, 0.2f, 1.0f}; break;
+    case GuiState::Found:     state_str = "BULUNDU!";           color = {0.2f, 1.0f, 0.2f, 1.0f}; break;
+    case GuiState::Exhausted: state_str = "Tarama Tamamlandı";  color = {1.0f, 0.6f, 0.0f, 1.0f}; break;
+    case GuiState::Error:     state_str = "HATA";               color = {1.0f, 0.2f, 0.2f, 1.0f}; break;
   }
-  ImGui::TextColored(color, "State: %s", state_str);
+  ImGui::TextColored(color, "Durum: %s", state_str);
 
   ImGui::Spacing();
-  ImGui::Text("Chunks scanned : %llu", static_cast<unsigned long long>(stats.chunks_scanned));
-  ImGui::Text("Keys scanned   : %llu", static_cast<unsigned long long>(stats.keys_scanned));
-  ImGui::Text("Rate (Primary): %.1f M/s", stats.rate_keys_per_sec / 1e6);
+  ImGui::Text("Hedef Aralık        : %s - %s", app.range_start_buf, app.range_end_buf);
+  ImGui::Text("Toplam Anahtar Alanı : %s", stats.total_keyspace_str.empty() ? "-" : stats.total_keyspace_str.c_str());
+  ImGui::Text("Taranan Anahtar      : %llu (%%%.6f)",
+              static_cast<unsigned long long>(stats.keys_scanned), stats.progress_percent);
+  ImGui::ProgressBar(static_cast<float>(stats.progress_percent / 100.0), ImVec2(-1.0f, 0.0f));
+
+  ImGui::Spacing();
+  ImGui::Text("Taranan Parça (Chunk): %llu", static_cast<unsigned long long>(stats.chunks_scanned));
+  ImGui::Text("Hız (Birincil)       : %.1f M/s", stats.rate_keys_per_sec / 1e6);
 #ifdef PUZZLE71_ENABLE_CUDA
   if (app.controller && app.options.engine == "gpu") {
-    ImGui::Text("Rate (Raw GPU) : %.2f GH/s",
+    ImGui::Text("Hız (Ham GPU)        : %.2f GH/s",
                 (stats.rate_keys_per_sec * 6.0) / 1e9);
   }
 #endif
-  ImGui::Text("Matches found  : %llu", static_cast<unsigned long long>(stats.matches_found));
-  ImGui::Text("Elapsed        : %.1f s", stats.elapsed_seconds);
+  ImGui::Text("Bulunan Eşleşmeler   : %llu", static_cast<unsigned long long>(stats.matches_found));
+  ImGui::Text("Geçen Süre           : %.1f s", stats.elapsed_seconds);
 
   if (!stats.current_range_start.empty() && !stats.current_range_end.empty()) {
-    ImGui::Text("Current Chunk  : %s : %s",
+    ImGui::Text("Anlık Parça Aralığı  : %s : %s",
                 stats.current_range_start.c_str(),
                 stats.current_range_end.c_str());
   }
@@ -530,7 +577,7 @@ void DrawTelemetryPanel(AppState& app, const GuiStats& stats) {
   if (app.alert_funded_prefix) {
     ImGui::Spacing();
     ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f),
-                       "*** FOUND FUNDED PREFIX! Check prefix_found.txt ***");
+                       "*** BAKİYELİ ÖNEK BULUNDU! prefix_found.txt dosyasını kontrol edin ***");
     for (const auto& fa : app.funded_prefixes_found) {
       ImGui::BulletText("%s", fa.c_str());
     }
@@ -541,12 +588,12 @@ void DrawTelemetryPanel(AppState& app, const GuiStats& stats) {
                   "%s", stats.last_error.c_str());
     ImGui::Spacing();
     ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
-                       "Error: %s", stats.last_error.c_str());
+                       "Hata: %s", stats.last_error.c_str());
   }
 
   ImGui::Spacing();
   ImGui::Separator();
-  ImGui::Text("Output files");
+  ImGui::Text("Çıktı Dosyaları");
   if (app.controller) {
     const auto now = std::chrono::steady_clock::now();
     if (now - app.last_fs_check >= std::chrono::seconds(1) ||
@@ -563,7 +610,7 @@ void DrawTelemetryPanel(AppState& app, const GuiStats& stats) {
     }
 
     ImGui::BeginDisabled(!app.cached_has_matches);
-    if (ImGui::Button("Open Matches")) {
+    if (ImGui::Button("Eşleşmeleri Aç (JSONL)")) {
       ShellExecuteA(NULL, "open",
                     app.controller->foundMatchesPath().string().c_str(),
                     NULL, NULL, SW_SHOWNORMAL);
@@ -574,7 +621,7 @@ void DrawTelemetryPanel(AppState& app, const GuiStats& stats) {
     bool has_prefix_matches = std::filesystem::exists(app.controller->foundMatchesPath().parent_path() / "prefix_found.txt", ec_pfx);
     ImGui::SameLine();
     ImGui::BeginDisabled(!has_prefix_matches);
-    if (ImGui::Button("Open Prefix List")) {
+    if (ImGui::Button("Önek Listesini Aç (TXT)")) {
       ShellExecuteA(NULL, "open",
                     (app.controller->foundMatchesPath().parent_path() / "prefix_found.txt").string().c_str(),
                     NULL, NULL, SW_SHOWNORMAL);
@@ -583,7 +630,7 @@ void DrawTelemetryPanel(AppState& app, const GuiStats& stats) {
 
     ImGui::SameLine();
     ImGui::BeginDisabled(!app.cached_has_log);
-    if (ImGui::Button("Open Log")) {
+    if (ImGui::Button("Tarama Günlüğünü Aç")) {
       ShellExecuteA(NULL, "open",
                     app.controller->scannedRangesPath().string().c_str(),
                     NULL, NULL, SW_SHOWNORMAL);
@@ -591,27 +638,27 @@ void DrawTelemetryPanel(AppState& app, const GuiStats& stats) {
     ImGui::EndDisabled();
 
     ImGui::SameLine();
-    if (ImGui::Button("Open Output Folder")) {
+    if (ImGui::Button("Çıktı Klasörünü Aç")) {
       ShellExecuteA(NULL, "open",
                     app.controller->foundMatchesPath().parent_path().string().c_str(),
                     NULL, NULL, SW_SHOWNORMAL);
     }
   } else {
-    ImGui::TextDisabled("(no active run)");
+    ImGui::TextDisabled("(aktif çalışan görev yok)");
   }
 
   ImGui::Spacing();
   ImGui::Separator();
-  ImGui::Text("Recent Found Vanity Prefixes (%zu)", app.recent_found_prefixes.size());
+  ImGui::Text("Son Bulunan Vanity Önekleri (%zu)", app.recent_found_prefixes.size());
   if (app.recent_found_prefixes.empty()) {
-    ImGui::TextDisabled("No vanity prefixes discovered yet.");
+    ImGui::TextDisabled("Henüz hiçbir vanity öneki bulunamadı.");
   } else {
     if (ImGui::BeginTable("RecentPrefixesTable", 3,
                           ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
                           ImVec2(0, 150))) {
-      ImGui::TableSetupColumn("Address", ImGuiTableColumnFlags_WidthStretch);
-      ImGui::TableSetupColumn("Tx Count", ImGuiTableColumnFlags_WidthFixed, 75.0f);
-      ImGui::TableSetupColumn("Balance / Status", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+      ImGui::TableSetupColumn("Adres", ImGuiTableColumnFlags_WidthStretch);
+      ImGui::TableSetupColumn("İşlem Sayısı", ImGuiTableColumnFlags_WidthFixed, 85.0f);
+      ImGui::TableSetupColumn("Bakiye / Durum", ImGuiTableColumnFlags_WidthFixed, 150.0f);
       ImGui::TableHeadersRow();
 
       for (int i = static_cast<int>(app.recent_found_prefixes.size()) - 1; i >= 0; --i) {
@@ -623,21 +670,21 @@ void DrawTelemetryPanel(AppState& app, const GuiStats& stats) {
 
         ImGui::TableSetColumnIndex(1);
         if (!item.checked) {
-          ImGui::TextDisabled("Checking...");
+          ImGui::TextDisabled("Sorgulanıyor...");
         } else {
           ImGui::Text("%u", item.tx_count);
         }
 
         ImGui::TableSetColumnIndex(2);
         if (!item.checked) {
-          ImGui::TextDisabled("Checking...");
+          ImGui::TextDisabled("Sorgulanıyor...");
         } else if (item.balance_satoshis > 0) {
           double btc = static_cast<double>(item.balance_satoshis) / 1e8;
           ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "%.8f BTC", btc);
         } else if (item.tx_count > 0) {
-          ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Used (Empty)");
+          ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Kullanılmış (Boş)");
         } else {
-          ImGui::TextDisabled("Fresh / 0 BTC");
+          ImGui::TextDisabled("Yeni / 0 BTC");
         }
       }
       ImGui::EndTable();
@@ -648,8 +695,8 @@ void DrawTelemetryPanel(AppState& app, const GuiStats& stats) {
   if (stats.state == GuiState::Found) {
     ImGui::Spacing();
     ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f),
-                       "*** FULL MATCH FOUND ***");
-    ImGui::Text("See found_matches.jsonl for the private key.");
+                       "*** HEDEF ADRES EŞLEŞMESİ BULUNDU ***");
+    ImGui::Text("Özel anahtar (private key) found_matches.jsonl dosyasına kaydedildi.");
   }
 }
 
@@ -672,7 +719,7 @@ int main(int, char**) {
   ::RegisterClassExW(&wc);
   HWND hwnd = ::CreateWindowW(
       wc.lpszClassName,
-      L"Puzzle 71 Solver",
+      L"Bitcoin Puzzle & Vanity Çözücü",
       WS_OVERLAPPEDWINDOW,
       100, 100, 1080, 680,
       nullptr, nullptr, wc.hInstance, nullptr);
@@ -808,7 +855,7 @@ int main(int, char**) {
     // 2. Central window
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
-    ImGui::Begin("Puzzle 71 Solver",
+    ImGui::Begin("Bitcoin Puzzle & Vanity Çözücü",
                  nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                  ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);

@@ -29,6 +29,9 @@ struct SolverStats {
   double rate_keys_per_sec = 0.0;
   std::string current_range_start;
   std::string current_range_end;
+  uint64_t total_keyspace = 0;
+  std::string total_keyspace_str;
+  double progress_percent = 0.0;
 };
 
 enum class SolverExitReason {
@@ -45,6 +48,9 @@ struct SolverConfig {
   int worker_id = 0;
   uint64_t max_chunks = 0;  // 0 = unlimited, >0 = limit number of chunks scanned
   std::function<void(const std::string& address)> on_prefix_found = nullptr;
+  uint64_t total_keyspace = 0;
+  std::string total_keyspace_str;
+  double total_keyspace_double = 0.0;
 };
 
 class PuzzleSolver {

@@ -696,3 +696,27 @@ TEST(CliParseArgsTest, PuzzleFlagLoadsCorrectly) {
 TEST(CliParseArgsTest, PuzzleFlagUnknownThrows) {
   EXPECT_THROW(CallParseArgs({"--puzzle", "999999"}), std::invalid_argument);
 }
+
+TEST(CliContextTest, AddressListInitializesMatcherAndStats) {
+  TempDir temp_dir;
+  CliOptions options;
+  options.range_start = RangeKey::FromHex("AB00");
+  options.range_end = RangeKey::FromHex("ABFF");
+  options.chunk_size = 256;
+  options.gpu_stride = 256;
+  options.address_list = {
+      "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU",
+      "1JTK7s9YVYywfm5XUH7RNhHJH1LshCaRFR"
+  };
+  options.output_dir = temp_dir.path();
+  options.engine = "cpu";
+
+  SolverContext ctx(options);
+  ASSERT_NE(ctx.matcher, nullptr);
+  EXPECT_EQ(ctx.matcher->classify("1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU").kind, MatchKind::Full);
+  EXPECT_EQ(ctx.matcher->classify("1JTK7s9YVYywfm5XUH7RNhHJH1LshCaRFR").kind, MatchKind::Full);
+
+  auto stats = ctx.solver->getStats();
+  EXPECT_EQ(stats.total_keyspace, 256ull);
+  EXPECT_EQ(stats.total_keyspace_str, "256");
+}

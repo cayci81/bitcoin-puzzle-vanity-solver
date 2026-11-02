@@ -28,6 +28,9 @@ struct GuiStats {
   std::string current_range_start;
   std::string current_range_end;
   double      current_chunk_progress = 0.0;
+  uint64_t    total_keyspace    = 0;
+  std::string total_keyspace_str;
+  double      progress_percent  = 0.0;
 };
 
 class GuiController {

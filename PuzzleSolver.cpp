@@ -159,6 +159,12 @@ SolverStats PuzzleSolver::getStats() const {
   stats.chunks_scanned = chunks_scanned_.load(std::memory_order_relaxed);
   stats.keys_scanned = keys_scanned_.load(std::memory_order_relaxed);
   stats.matches_found = matches_found_.load(std::memory_order_relaxed);
+  stats.total_keyspace = config_.total_keyspace;
+  stats.total_keyspace_str = config_.total_keyspace_str;
+  if (config_.total_keyspace_double > 0.0) {
+    stats.progress_percent = (static_cast<double>(stats.keys_scanned) / config_.total_keyspace_double) * 100.0;
+    if (stats.progress_percent > 100.0) stats.progress_percent = 100.0;
+  }
 
   {
     std::lock_guard<std::mutex> lock(range_mu_);

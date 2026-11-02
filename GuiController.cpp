@@ -124,6 +124,9 @@ GuiStats GuiController::getStats() const {
     out.matches_found     = final_snapshot.matches_found;
     out.current_range_start = final_snapshot.current_range_start;
     out.current_range_end   = final_snapshot.current_range_end;
+    out.total_keyspace    = final_snapshot.total_keyspace;
+    out.total_keyspace_str = final_snapshot.total_keyspace_str;
+    out.progress_percent  = final_snapshot.progress_percent;
     return out;
   }
 
@@ -138,6 +141,9 @@ GuiStats GuiController::getStats() const {
     out.matches_found     = ss.matches_found;
     out.current_range_start = ss.current_range_start;
     out.current_range_end   = ss.current_range_end;
+    out.total_keyspace    = ss.total_keyspace;
+    out.total_keyspace_str = ss.total_keyspace_str;
+    out.progress_percent  = ss.progress_percent;
     if (options_.chunk_size > 0) {
       out.current_chunk_progress = static_cast<double>(ss.keys_scanned % options_.chunk_size) / static_cast<double>(options_.chunk_size);
     }
