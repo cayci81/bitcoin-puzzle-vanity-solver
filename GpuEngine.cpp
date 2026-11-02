@@ -238,10 +238,22 @@ GpuEngine::GpuEngine(std::shared_ptr<Secp256K1> secp,
         "GpuEngine requires a non-null Secp256K1 instance.");
   }
   validateGpuTable(gpu_table_);
+  if (config_.grid_size_y <= 0) {
+    throw std::invalid_argument("GPU Grid Y must be > 0");
+  }
+  if (config_.grid_size_x > 0 && config_.grid_size_x * config_.grid_size_y > 262144) {
+    std::cerr << "Warning: GPU Grid (" << config_.grid_size_x << "x" << config_.grid_size_y
+              << " = " << (config_.grid_size_x * config_.grid_size_y)
+              << " threads) exceeds 262144. GPU may run out of registers or fail to launch.\n";
+  }
 
 #ifdef PUZZLE71_ENABLE_CUDA
   impl_ = std::make_unique<GpuEngineImpl>(secp_, gpu_table_, config_);
   nb_thread_ = impl_->gpu->GetNbThread();
+  if (nb_thread_ > 262144 && config_.grid_size_x == -1) {
+    std::cerr << "Warning: GPU Grid total threads (" << nb_thread_
+              << ") exceeds 262144. GPU may run out of registers or fail to launch.\n";
+  }
 #endif
 }
 

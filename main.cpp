@@ -267,6 +267,8 @@ void PrintHelp() {
       << "  --output-dir <dizin>             scanned_ranges ve found_matches çıktı dizini\n"
       << "  --engine <cpu|gpu>               Hesaplama motoru (varsayılan: cpu)\n"
       << "  --gpu-id <id>                    CUDA GPU cihaz kimliği (varsayılan: 0)\n"
+      << "  --gpu-grid-x <N>                 GPU blok sayısı (-1 = SM x 8 otomatik, varsayılan: -1)\n"
+      << "  --gpu-grid-y <N>                 Blok başına GPU thread sayısı (varsayılan: 128)\n"
       << "  --puzzle <id>                    puzzles.json dosyasından bulmaca kimliği (otomatik aralık/adres)\n"
       << "  --max-chunks <N>                 N parça sonra durur (0 = sınırsız)\n"
       << "  --prefix-hex <csv>               Virgülle ayrılmış hash160 hex önekleri (örn. 5abc,6123)\n"
@@ -396,6 +398,18 @@ void LoadConfigFile(const std::filesystem::path& config_path,
       options.engine = val;
     } else if (key == "gpu_id") {
       options.gpu_id = ParseStrictInt(val, "gpu_id");
+    } else if (key == "gpu_grid_x") {
+      int v = ParseStrictInt(val, "gpu_grid_x");
+      if (v < -1 || v == 0) {
+        throw std::invalid_argument("gpu_grid_x must be > 0 or -1");
+      }
+      options.gpu_grid_x = v;
+    } else if (key == "gpu_grid_y") {
+      int v = ParseStrictInt(val, "gpu_grid_y");
+      if (v <= 0) {
+        throw std::invalid_argument("gpu_grid_y must be > 0");
+      }
+      options.gpu_grid_y = v;
     } else if (key == "dir" || key == "output_dir") {
       options.output_dir = val;
     } else if (key == "prefix_hex") {
@@ -498,6 +512,18 @@ ParsedArgs ParseArgs(int argc, char** argv) {
       }
     } else if (arg == "--gpu-id") {
       parsed.options.gpu_id = ParseStrictInt(require_value(i, arg), arg);
+    } else if (arg == "--gpu-grid-x") {
+      int v = ParseStrictInt(require_value(i, arg), arg);
+      if (v < -1 || v == 0) {
+        throw std::invalid_argument("--gpu-grid-x must be > 0 or -1 for auto");
+      }
+      parsed.options.gpu_grid_x = v;
+    } else if (arg == "--gpu-grid-y") {
+      int v = ParseStrictInt(require_value(i, arg), arg);
+      if (v <= 0) {
+        throw std::invalid_argument("--gpu-grid-y must be > 0");
+      }
+      parsed.options.gpu_grid_y = v;
     } else if (arg == "--max-chunks") {
       parsed.options.max_chunks = ParseStrictUint64(require_value(i, arg), arg);
     } else if (arg == "--prefix-hex") {
@@ -682,7 +708,11 @@ SolverContext::SolverContext(const CliOptions& opts) : options(opts) {
           "-DPUZZLE71_BUILD_CUDA=ON");
     }
     try {
-      engine = std::make_shared<GpuEngine>(secp, gpu_table, options.gpu_id);
+      GpuEngineConfig gpu_cfg;
+      gpu_cfg.gpu_id = options.gpu_id;
+      gpu_cfg.grid_size_x = options.gpu_grid_x;
+      gpu_cfg.grid_size_y = options.gpu_grid_y;
+      engine = std::make_shared<GpuEngine>(secp, gpu_table, gpu_cfg);
     } catch (const std::runtime_error& e) {
       if (std::string(e.what()).find("popcount") != std::string::npos ||
           std::string(e.what()).find("4096") != std::string::npos ||

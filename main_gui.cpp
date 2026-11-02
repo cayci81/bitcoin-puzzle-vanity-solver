@@ -168,6 +168,8 @@ struct AppState {
   // Default chunk size: 100M when CUDA GPU is available, 10M on CPU-only builds.
   uint64_t chunk_size_u64 = puzzle::GpuEngine::isAvailable() ? 100'000'000ULL : 10'000'000ULL;
   int  gpu_stride_int      = 262144;
+  int  gpu_grid_x_int      = -1;
+  int  gpu_grid_y_int      = 128;
   int  engine_idx          = puzzle::GpuEngine::isAvailable() ? 1 : 0;   // 0=cpu, 1=gpu
   char output_dir_buf[512] = "./puzzle71_results";
   char prefix_hex_buf[256] = {0};
@@ -311,6 +313,8 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
       } else {
         app.engine_idx = 0;
       }
+      app.gpu_grid_x_int = loaded.gpu_grid_x;
+      app.gpu_grid_y_int = loaded.gpu_grid_y;
       std::snprintf(app.last_action_buf, sizeof(app.last_action_buf),
                     "Yüklendi: %s", cfg_path.string().c_str());
     } catch (const std::exception& e) {
@@ -432,6 +436,17 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
   }
   ImGui::TextDisabled("(Yalnızca CPU derlemesi. GPU için -DPUZZLE71_BUILD_CUDA=ON ile derleyin)");
 #endif
+  if (app.engine_idx == 1) { // Only show for GPU
+    ImGui::InputInt("GPU Blok Sayısı (Grid X)", &app.gpu_grid_x_int);
+    ImGui::TextDisabled("(-1 = Otomatik: SM x 8)");
+    ImGui::InputInt("GPU Thread Sayısı (Grid Y)", &app.gpu_grid_y_int);
+    ImGui::TextDisabled("(Varsayılan: 128)");
+    
+    if (ImGui::Button("RTX 4060 İçin Optimize Et")) {
+      app.gpu_grid_x_int = 192; // 24 SMs * 8
+      app.gpu_grid_y_int = 256; // Try 256 threads per block for Ada Lovelace
+    }
+  }
   ImGui::InputText("Çıktı Klasörü", app.output_dir_buf, sizeof(app.output_dir_buf));
   ImGui::InputText("Hex Önek Filtresi (csv)", app.prefix_hex_buf, sizeof(app.prefix_hex_buf));
   ImGui::EndDisabled();
@@ -457,6 +472,8 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
       opts.chunk_size     = app.chunk_size_u64;
       opts.gpu_stride     = static_cast<uint64_t>(app.gpu_stride_int);
       opts.engine         = (app.engine_idx == 0) ? "cpu" : "gpu";
+      opts.gpu_grid_x     = app.gpu_grid_x_int;
+      opts.gpu_grid_y     = app.gpu_grid_y_int;
       opts.output_dir     = app.output_dir_buf;
       opts.prefix_hex_csv = app.prefix_hex_buf;
 

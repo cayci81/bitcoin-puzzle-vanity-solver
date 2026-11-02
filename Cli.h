@@ -37,6 +37,8 @@ struct CliOptions {
   std::filesystem::path output_dir = ".";
   std::string engine = "cpu";             // "cpu" or "gpu"
   int gpu_id = 0;
+  int gpu_grid_x = -1;                    // -1 means auto (SM_COUNT * 8)
+  int gpu_grid_y = 128;                   // Threads per block
   uint64_t max_chunks = 0;                // 0 = unlimited
   int puzzle_id = 0;                      // --puzzle <id>: auto-load from puzzles.json
   bool use_endomorphism = false;          // reserved for v2

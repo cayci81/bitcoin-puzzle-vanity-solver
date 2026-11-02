@@ -214,6 +214,51 @@ TEST(CliParseArgsTest, ParsesEngineGpuAccepted) {
   EXPECT_EQ(parsed_gpu.options.engine, "gpu");
 }
 
+TEST(CliParseArgsTest, ParsesGpuGridConfiguration) {
+  auto parsed = CallParseArgs({
+      "--address", "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU",
+      "--range-hex", "400000000000000000:7fffffffffffffffff",
+      "--gpu-grid-x", "192",
+      "--gpu-grid-y", "256"
+  });
+  EXPECT_EQ(parsed.options.gpu_grid_x, 192);
+  EXPECT_EQ(parsed.options.gpu_grid_y, 256);
+
+  auto parsed_auto = CallParseArgs({
+      "--address", "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU",
+      "--range-hex", "400000000000000000:7fffffffffffffffff",
+      "--gpu-grid-x", "-1",
+      "--gpu-grid-y", "128"
+  });
+  EXPECT_EQ(parsed_auto.options.gpu_grid_x, -1);
+  EXPECT_EQ(parsed_auto.options.gpu_grid_y, 128);
+
+  // Invalid values
+  EXPECT_THROW(CallParseArgs({
+      "--address", "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU",
+      "--range-hex", "400000000000000000:7fffffffffffffffff",
+      "--gpu-grid-y", "0"
+  }), std::invalid_argument);
+
+  EXPECT_THROW(CallParseArgs({
+      "--address", "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU",
+      "--range-hex", "400000000000000000:7fffffffffffffffff",
+      "--gpu-grid-y", "-10"
+  }), std::invalid_argument);
+
+  EXPECT_THROW(CallParseArgs({
+      "--address", "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU",
+      "--range-hex", "400000000000000000:7fffffffffffffffff",
+      "--gpu-grid-x", "-2"
+  }), std::invalid_argument);
+
+  EXPECT_THROW(CallParseArgs({
+      "--address", "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU",
+      "--range-hex", "400000000000000000:7fffffffffffffffff",
+      "--gpu-grid-x", "0"
+  }), std::invalid_argument);
+}
+
 TEST(CliParseArgsTest, MaxChunksParsedCorrectly) {
   auto parsed = CallParseArgs({
       "--address", "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU",

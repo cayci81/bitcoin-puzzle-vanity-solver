@@ -156,6 +156,17 @@ TEST_F(GpuEngineTest, GpuEngineAccepts100Prefixes) {
   EXPECT_NO_THROW(GpuEngine(secp_, table));
 }
 
+TEST_F(GpuEngineTest, GpuEngineValidatesGridConfig) {
+  std::vector<uint8_t> table(65536, 0);
+  GpuEngineConfig cfg_bad_y1;
+  cfg_bad_y1.grid_size_y = 0;
+  EXPECT_THROW(GpuEngine(secp_, table, cfg_bad_y1), std::invalid_argument);
+
+  GpuEngineConfig cfg_bad_y2;
+  cfg_bad_y2.grid_size_y = -5;
+  EXPECT_THROW(GpuEngine(secp_, table, cfg_bad_y2), std::invalid_argument);
+}
+
 #ifdef PUZZLE71_ENABLE_CUDA
 
 TEST_F(GpuEngineTest, GpuMatchesCpuOnEmptyChunk) {
