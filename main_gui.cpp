@@ -180,18 +180,26 @@ struct AppState {
   bool cached_has_log      = false;
 
   // Puzzles and Balance Intelligence
+  struct FoundPrefixEntry {
+    std::string address;
+    uint32_t tx_count = 0;
+    uint64_t balance_satoshis = 0;
+    bool checked = false;
+  };
+
   std::vector<PuzzleEntry> puzzles;
   int selected_puzzle_idx = -1;
-  std::future<std::map<std::string, uint64_t>> balance_future;
+  std::future<std::map<std::string, AddressInfo>> balance_future;
   bool checking_balance = false;
   std::string balance_status = "Not checked";
   bool is_funded = false;
-  uint64_t current_balance_satoshis = 0;
+  AddressInfo current_address_info{};
 
   // Prefix match background checking
-  std::future<std::map<std::string, uint64_t>> prefix_balance_future;
+  std::future<std::map<std::string, AddressInfo>> prefix_balance_future;
   bool checking_prefix_balance = false;
   std::vector<std::string> pending_check_prefixes;
+  std::vector<FoundPrefixEntry> recent_found_prefixes;
   std::vector<std::string> funded_prefixes_found;
   bool alert_funded_prefix = false;
 };
@@ -325,17 +333,20 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
         app.checking_balance = false;
         std::string addr = app.address_buf;
         if (res.find(addr) != res.end()) {
-          uint64_t sats = res[addr];
-          app.current_balance_satoshis = sats;
-          if (sats > 0) {
+          const auto& info = res[addr];
+          app.current_address_info = info;
+          if (info.balance_satoshis > 0) {
             app.is_funded = true;
-            double btc = static_cast<double>(sats) / 1e8;
-            char btc_str[64];
-            std::snprintf(btc_str, sizeof(btc_str), "FUNDED! Balance: %.8f BTC", btc);
+            double btc = static_cast<double>(info.balance_satoshis) / 1e8;
+            char btc_str[80];
+            std::snprintf(btc_str, sizeof(btc_str), "FUNDED! %.8f BTC (%u txs)", btc, info.tx_count);
             app.balance_status = btc_str;
+          } else if (info.tx_count > 0) {
+            app.is_funded = false;
+            app.balance_status = "Used (" + std::to_string(info.tx_count) + " txs) - Empty";
           } else {
             app.is_funded = false;
-            app.balance_status = "Active (Empty / 0 BTC)";
+            app.balance_status = "Fresh / Unused";
           }
         } else {
           app.balance_status = "Address not found";
@@ -349,6 +360,8 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
 
   if (app.is_funded) {
     ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Status: %s", app.balance_status.c_str());
+  } else if (app.current_address_info.tx_count > 0) {
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Status: %s", app.balance_status.c_str());
   } else {
     ImGui::TextDisabled("Status: %s", app.balance_status.c_str());
   }
@@ -587,6 +600,50 @@ void DrawTelemetryPanel(AppState& app, const GuiStats& stats) {
     ImGui::TextDisabled("(no active run)");
   }
 
+  ImGui::Spacing();
+  ImGui::Separator();
+  ImGui::Text("Recent Found Vanity Prefixes (%zu)", app.recent_found_prefixes.size());
+  if (app.recent_found_prefixes.empty()) {
+    ImGui::TextDisabled("No vanity prefixes discovered yet.");
+  } else {
+    if (ImGui::BeginTable("RecentPrefixesTable", 3,
+                          ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
+                          ImVec2(0, 150))) {
+      ImGui::TableSetupColumn("Address", ImGuiTableColumnFlags_WidthStretch);
+      ImGui::TableSetupColumn("Tx Count", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+      ImGui::TableSetupColumn("Balance / Status", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+      ImGui::TableHeadersRow();
+
+      for (int i = static_cast<int>(app.recent_found_prefixes.size()) - 1; i >= 0; --i) {
+        const auto& item = app.recent_found_prefixes[i];
+        ImGui::TableNextRow();
+
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted(item.address.c_str());
+
+        ImGui::TableSetColumnIndex(1);
+        if (!item.checked) {
+          ImGui::TextDisabled("Checking...");
+        } else {
+          ImGui::Text("%u", item.tx_count);
+        }
+
+        ImGui::TableSetColumnIndex(2);
+        if (!item.checked) {
+          ImGui::TextDisabled("Checking...");
+        } else if (item.balance_satoshis > 0) {
+          double btc = static_cast<double>(item.balance_satoshis) / 1e8;
+          ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "%.8f BTC", btc);
+        } else if (item.tx_count > 0) {
+          ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Used (Empty)");
+        } else {
+          ImGui::TextDisabled("Fresh / 0 BTC");
+        }
+      }
+      ImGui::EndTable();
+    }
+  }
+
   // On Found: big visual call-to-action
   if (stats.state == GuiState::Found) {
     ImGui::Spacing();
@@ -617,7 +674,7 @@ int main(int, char**) {
       wc.lpszClassName,
       L"Puzzle 71 Solver",
       WS_OVERLAPPEDWINDOW,
-      100, 100, 1024, 560,
+      100, 100, 1080, 680,
       nullptr, nullptr, wc.hInstance, nullptr);
 
   if (!CreateDeviceD3D(hwnd)) {
@@ -701,6 +758,13 @@ int main(int, char**) {
       auto new_pfx = app.controller->popFoundPrefixes();
       for (const auto& addr : new_pfx) {
         app.pending_check_prefixes.push_back(addr);
+        AppState::FoundPrefixEntry entry;
+        entry.address = addr;
+        entry.checked = false;
+        app.recent_found_prefixes.push_back(entry);
+        if (app.recent_found_prefixes.size() > 50) {
+          app.recent_found_prefixes.erase(app.recent_found_prefixes.begin());
+        }
       }
     } else {
       stats.state = GuiState::Idle;
@@ -721,8 +785,17 @@ int main(int, char**) {
         try {
           auto res = app.prefix_balance_future.get();
           for (const auto& kv : res) {
-            if (kv.second > 0) {
-              app.funded_prefixes_found.push_back(kv.first);
+            const auto& addr = kv.first;
+            const auto& info = kv.second;
+            for (auto& item : app.recent_found_prefixes) {
+              if (item.address == addr) {
+                item.balance_satoshis = info.balance_satoshis;
+                item.tx_count = info.tx_count;
+                item.checked = true;
+              }
+            }
+            if (info.balance_satoshis > 0) {
+              app.funded_prefixes_found.push_back(addr);
               app.alert_funded_prefix = true;
             }
           }

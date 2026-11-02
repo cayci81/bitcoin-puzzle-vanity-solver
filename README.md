@@ -8,7 +8,10 @@ It includes:
 - **Two-Stage Prefix & Full-Address Filtering** (`HexPrefixFilter`, `AddressMatcher`) with automatic 16-bit `hash160` prefix narrowing for full target addresses.
 - **Durable Match Persistence** (`FoundMatchWriter`) that writes matches to `found_matches.jsonl` and flushes to disk with `_commit` / `fsync`.
 - **Pluggable Compute Engines** (`CpuEngine` and CUDA `GpuEngine` adapting VanitySearch's `GPUEngine` with zero `.cu` kernel diff and host-side endomorphism/symmetry filtering).
-- **CLI & Win32/DirectX11 Dear ImGui GUI** (`puzzle71_solver` and `puzzle71_gui`) with real-time atomic progress telemetry.
+- **Multi-Target Vanity & Batch Matching** (`TargetListLoader`, `HexPrefixFilter`, `AddressMatcher`) supporting hundreds of target addresses (`--address-file`) and vanity prefixes (`--prefix-file`).
+- **Human-Readable Match Outputs** (`prefix_found.txt` and `found_matches.jsonl`) recording vanity matches with timestamp, matched prefix, address, and private key.
+- **Crypto Intelligence & Caching** (`NetworkAPI`, `PuzzleDatabase`) with asynchronous balance and transaction count queries via Blockchain.info API, protected by in-memory caching and 1-second rate-limiting.
+- **CLI & Win32/DirectX11 Dear ImGui GUI** (`puzzle71_solver` and `puzzle71_gui`) with real-time atomic progress telemetry, puzzle presets (`puzzles.json`), and live vanity search dashboard.
 
 ---
 
@@ -55,12 +58,26 @@ ctest --test-dir build-cuda -C Release --output-on-failure
 
 ### CLI (`puzzle71_solver`)
 
-1. **Run using the Puzzle #71 TOML configuration file:**
+1. **Run by Puzzle ID (auto-loads range & address from `puzzles.json`):**
+   ```bash
+   ./build-cuda/Release/puzzle71_solver.exe --puzzle 71 --engine gpu
+   ```
+
+2. **Run using a TOML configuration file:**
    ```bash
    ./build-cuda/Release/puzzle71_solver.exe --config configs/puzzle71.toml
    ```
 
-2. **Run a quick self-check on a known key (`0xABCD` -> `15QkBmpomYLhx71f2zKZpTt1eCXa4EEMya`):**
+3. **Multi-Target Matching with address and prefix text files:**
+   ```bash
+   ./build-cuda/Release/puzzle71_solver.exe \
+     --address-file targets.txt \
+     --prefix-file prefixes.txt \
+     --range-hex 400000000000000000:7fffffffffffffffff \
+     --engine gpu
+   ```
+
+4. **Run a quick self-check on a known key (`0xABCD` -> `15QkBmpomYLhx71f2zKZpTt1eCXa4EEMya`):**
    ```bash
    ./build-cuda/Release/puzzle71_solver.exe \
      --address 15QkBmpomYLhx71f2zKZpTt1eCXa4EEMya \
@@ -71,7 +88,7 @@ ctest --test-dir build-cuda -C Release --output-on-failure
      --output-dir ./demo_out
    ```
 
-3. **Run a 100M-key GPU benchmark chunk:**
+5. **Run a 100M-key GPU benchmark chunk:**
    ```bash
    ./build-cuda/Release/puzzle71_solver.exe \
      --address 15QkBmpomYLhx71f2zKZpTt1eCXa4EEMya \
@@ -87,8 +104,10 @@ ctest --test-dir build-cuda -C Release --output-on-failure
 ```bash
 ./build-cuda/Release/puzzle71_gui.exe
 ```
+- **Puzzle Preset Dropdown**: Choose any Bitcoin puzzle (Puzzles #1 to #160). The address, range start, range end, and bit width auto-populate, and an asynchronous query checks the balance.
+- **Address Intelligence**: Click **"Check Balance"** to query transaction count and balance. Displays `Fresh / Unused`, `Used (X txs) - Empty`, or green `FUNDED! X BTC`.
+- **Live Vanity Search Dashboard**: Discovered vanity prefixes are logged in `prefix_found.txt` and displayed in real time in a scrollable table with their transaction count and funded status. If any found address has funds, a prominent alert triggers.
 - Use **"Demo range AB00:ABFF"** to verify an instant full match on key `0xABCD`.
-- Use **"Load Puzzle 71 range"** or **"Load from config"** to populate the Puzzle #71 keyspace (`400000000000000000:7fffffffffffffffff`) and chunk size (`100M` on GPU, `10M` on CPU).
 - Select `cpu` or `gpu` in the **Engine** dropdown and click **Start**.
 
 ---
