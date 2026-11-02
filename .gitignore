@@ -4,6 +4,7 @@ DOC/
 build/
 build-*/
 puzzle71_results/
+prefix_found.txt
 *.jsonl
 imgui.ini
 VanitySearchNoCUDA.*

@@ -789,3 +789,40 @@ TEST(CliContextTest, SeventySevenAddressesAccepted) {
     EXPECT_NE(ctx.matcher, nullptr);
   });
 }
+
+TEST(CliParseArgsTest, LanguageFlagParsing) {
+  {
+    ParsedArgs parsed = CallParseArgs({"--puzzle", "71", "--lang", "tr"});
+    EXPECT_EQ(parsed.options.lang, puzzle::AppLanguage::TR);
+  }
+  {
+    ParsedArgs parsed = CallParseArgs({"--puzzle", "71", "--lang", "en"});
+    EXPECT_EQ(parsed.options.lang, puzzle::AppLanguage::EN);
+  }
+  {
+    EXPECT_THROW(CallParseArgs({"--puzzle", "71", "--lang", "de"}), std::invalid_argument);
+  }
+}
+
+TEST(LocalizationTest, AllKeysHaveValidTranslations) {
+  const auto& all_strings = puzzle::Localization::GetAllStrings();
+  EXPECT_FALSE(all_strings.empty());
+
+  for (const auto& [key, pair] : all_strings) {
+    EXPECT_FALSE(key.empty());
+    // Turkish translation should not be empty
+    EXPECT_FALSE(pair.first.empty()) << "Empty TR string for key: " << key;
+    // English translation should not be empty
+    EXPECT_FALSE(pair.second.empty()) << "Empty EN string for key: " << key;
+
+    // L() helper should return exact pair
+    const char* tr_val = puzzle::L(key, puzzle::AppLanguage::TR);
+    const char* en_val = puzzle::L(key, puzzle::AppLanguage::EN);
+    EXPECT_STREQ(tr_val, pair.first.c_str());
+    EXPECT_STREQ(en_val, pair.second.c_str());
+  }
+
+  // Fallback for non-existent key
+  EXPECT_STREQ(puzzle::L("non_existent_key_xyz", puzzle::AppLanguage::TR), "non_existent_key_xyz");
+  EXPECT_STREQ(puzzle::L("non_existent_key_xyz", puzzle::AppLanguage::EN), "non_existent_key_xyz");
+}

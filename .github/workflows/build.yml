@@ -1,0 +1,30 @@
+name: C++ CI (Windows MSVC)
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Configure CMake (CPU Mode)
+      run: >
+        cmake -B build
+        -DCMAKE_BUILD_TYPE=Release
+        -DPUZZLE71_BUILD_CUDA=OFF
+        -DPUZZLE71_BUILD_TESTS=ON
+        -DPUZZLE71_BUILD_GUI=ON
+
+    - name: Build All Targets
+      run: cmake --build build --config Release --parallel
+
+    - name: Run Test Suite
+      run: |
+        .\build\Release\puzzle71_tests.exe

@@ -253,30 +253,58 @@ const char* ExitReasonToString(SolverExitReason reason) {
 
 }  // namespace
 
-void PrintHelp() {
-  std::cerr
-      << "Kullanım: puzzle71_solver [seçenekler]\n\n"
-      << "Seçenekler:\n"
-      << "  --config <dosya>                 TOML yapılandırma dosyasından ayarları yükler\n"
-      << "  --address <b58>                  Hedef sıkıştırılmış P2PKH Bitcoin adresi\n"
-      << "  --range-hex <başlangıç>:<bitiş>  Onaltılık (hex) anahtar aralığı\n"
-      << "  --chunk-size <N>                 Parça başına anahtar sayısı (varsayılan: 100000000)\n"
-      << "  --gpu-stride <N>                 GPU adım hizalaması (varsayılan: 262144)\n"
-      << "  --max-collision-retries <N>      Rastgele çakışma deneme sınırı (varsayılan: 8)\n"
-      << "  --seed <N>                       RNG tohum değeri (0 = sistem saatinden türetilir)\n"
-      << "  --output-dir <dizin>             scanned_ranges ve found_matches çıktı dizini\n"
-      << "  --engine <cpu|gpu>               Hesaplama motoru (varsayılan: cpu)\n"
-      << "  --gpu-id <id>                    CUDA GPU cihaz kimliği (varsayılan: 0)\n"
-      << "  --gpu-grid-x <N>                 GPU blok sayısı (-1 = SM x 8 otomatik, varsayılan: -1)\n"
-      << "  --gpu-grid-y <N>                 Blok başına GPU thread sayısı (varsayılan: 128)\n"
-      << "  --puzzle <id>                    puzzles.json dosyasından bulmaca kimliği (otomatik aralık/adres)\n"
-      << "  --max-chunks <N>                 N parça sonra durur (0 = sınırsız)\n"
-      << "  --prefix-hex <csv>               Virgülle ayrılmış hash160 hex önekleri (örn. 5abc,6123)\n"
-      << "  --prefix-b58 <önek>              Base58 adres öneki (tekrarlanabilir, örn. 1PWo3)\n"
-      << "  --address-file <dosya>           P2PKH adresleri listesi içeren metin dosyası (# yorum destekli)\n"
-      << "  --prefix-file <dosya>            Hex veya Base58 önekleri listesi içeren metin dosyası\n"
-      << "  --help                           Bu yardım mesajını gösterir ve çıkar\n"
-      << "  --version                        Sürüm bilgisini gösterir ve çıkar\n";
+void PrintHelp(AppLanguage lang) {
+  if (lang == AppLanguage::TR) {
+    std::cerr
+        << "Kullanım: puzzle71_solver [seçenekler]\n\n"
+        << "Seçenekler:\n"
+        << "  --config <dosya>                 TOML yapılandırma dosyasından ayarları yükler\n"
+        << "  --address <b58>                  Hedef sıkıştırılmış P2PKH Bitcoin adresi\n"
+        << "  --range-hex <başlangıç>:<bitiş>  Onaltılık (hex) anahtar aralığı\n"
+        << "  --chunk-size <N>                 Parça başına anahtar sayısı (varsayılan: 100000000)\n"
+        << "  --gpu-stride <N>                 GPU adım hizalaması (varsayılan: 262144)\n"
+        << "  --max-collision-retries <N>      Rastgele çakışma deneme sınırı (varsayılan: 8)\n"
+        << "  --seed <N>                       RNG tohum değeri (0 = sistem saatinden türetilir)\n"
+        << "  --output-dir <dizin>             scanned_ranges ve found_matches çıktı dizini\n"
+        << "  --engine <cpu|gpu>               Hesaplama motoru (varsayılan: cpu)\n"
+        << "  --gpu-id <id>                    CUDA GPU cihaz kimliği (varsayılan: 0)\n"
+        << "  --gpu-grid-x <N>                 GPU blok sayısı (-1 = SM x 8 otomatik, varsayılan: -1)\n"
+        << "  --gpu-grid-y <N>                 Blok başına GPU thread sayısı (varsayılan: 128)\n"
+        << "  --puzzle <id>                    puzzles.json dosyasından bulmaca kimliği (otomatik aralık/adres)\n"
+        << "  --max-chunks <N>                 N parça sonra durur (0 = sınırsız)\n"
+        << "  --prefix-hex <csv>               Virgülle ayrılmış hash160 hex önekleri (örn. 5abc,6123)\n"
+        << "  --prefix-b58 <önek>              Base58 adres öneki (tekrarlanabilir, örn. 1PWo3)\n"
+        << "  --address-file <dosya>           P2PKH adresleri listesi içeren metin dosyası (# yorum destekli)\n"
+        << "  --prefix-file <dosya>            Hex veya Base58 önekleri listesi içeren metin dosyası\n"
+        << "  --lang <tr|en>                   Yardım ve çıktı dili (varsayılan: en)\n"
+        << "  --help                           Bu yardım mesajını gösterir ve çıkar\n"
+        << "  --version                        Sürüm bilgisini gösterir ve çıkar\n";
+  } else {
+    std::cerr
+        << "Usage: puzzle71_solver [options]\n\n"
+        << "Options:\n"
+        << "  --config <file>                  Load settings from TOML configuration file\n"
+        << "  --address <b58>                  Target compressed P2PKH Bitcoin address\n"
+        << "  --range-hex <start>:<end>        Hexadecimal key range\n"
+        << "  --chunk-size <N>                 Keys per chunk (default: 100000000)\n"
+        << "  --gpu-stride <N>                 GPU batch stride alignment (default: 262144)\n"
+        << "  --max-collision-retries <N>      Max random collision retries (default: 8)\n"
+        << "  --seed <N>                       RNG seed (0 = derived from system clock)\n"
+        << "  --output-dir <dir>               Output directory for scanned_ranges and found_matches\n"
+        << "  --engine <cpu|gpu>               Compute engine (default: cpu)\n"
+        << "  --gpu-id <id>                    CUDA GPU device ID (default: 0)\n"
+        << "  --gpu-grid-x <N>                 GPU block count (-1 = auto SM x 8, default: -1)\n"
+        << "  --gpu-grid-y <N>                 GPU threads per block (default: 128)\n"
+        << "  --puzzle <id>                    Puzzle ID from puzzles.json (auto-sets range/address)\n"
+        << "  --max-chunks <N>                 Stop after N chunks (0 = unlimited)\n"
+        << "  --prefix-hex <csv>               Comma-separated hash160 hex prefixes (e.g. 5abc,6123)\n"
+        << "  --prefix-b58 <prefix>            Base58 address prefix (repeatable, e.g. 1PWo3)\n"
+        << "  --address-file <file>            Text file containing P2PKH addresses (# comments supported)\n"
+        << "  --prefix-file <file>             Text file containing hex or Base58 prefixes\n"
+        << "  --lang <tr|en>                   Language for help and messages (default: en)\n"
+        << "  --help                           Display this help message and exit\n"
+        << "  --version                        Display version information and exit\n";
+  }
 }
 
 void PrintVersion() {
@@ -422,6 +450,14 @@ void LoadConfigFile(const std::filesystem::path& config_path,
       }
     } else if (key == "max_chunks") {
       options.max_chunks = ParseStrictUint64(val, "max_chunks");
+    } else if (key == "lang") {
+      if (val == "tr" || val == "TR") {
+        options.lang = AppLanguage::TR;
+      } else if (val == "en" || val == "EN") {
+        options.lang = AppLanguage::EN;
+      } else {
+        throw std::invalid_argument("unknown lang value in config: " + val);
+      }
     } else {
       throw std::invalid_argument("unknown config key '" + key + "' in " +
                                   config_path.string());
@@ -441,6 +477,18 @@ void LoadConfigFile(const std::filesystem::path& config_path,
 ParsedArgs ParseArgs(int argc, char** argv) {
   ParsedArgs parsed;
   bool has_range = false;
+
+  // Preliminary scan for --lang so --help respects requested language
+  for (int i = 1; i < argc; ++i) {
+    if (argv[i] && std::string(argv[i]) == "--lang" && i + 1 < argc && argv[i + 1]) {
+      std::string lstr = argv[i + 1];
+      if (lstr == "tr" || lstr == "TR") {
+        parsed.options.lang = AppLanguage::TR;
+      } else if (lstr == "en" || lstr == "EN") {
+        parsed.options.lang = AppLanguage::EN;
+      }
+    }
+  }
 
   auto require_value = [&](int& i, const std::string& flag) -> std::string {
     if (i + 1 >= argc || argv[i + 1] == nullptr) {
@@ -557,6 +605,15 @@ ParsedArgs ParseArgs(int argc, char** argv) {
         parsed.options.address = entry->address;
       }
       has_range = true;
+    } else if (arg == "--lang") {
+      std::string lstr = require_value(i, arg);
+      if (lstr == "tr" || lstr == "TR") {
+        parsed.options.lang = AppLanguage::TR;
+      } else if (lstr == "en" || lstr == "EN") {
+        parsed.options.lang = AppLanguage::EN;
+      } else {
+        throw std::invalid_argument("unknown --lang value: " + lstr + " (expected 'tr' or 'en')");
+      }
     } else {
       throw std::invalid_argument("Unknown flag: " + arg);
     }
@@ -828,10 +885,11 @@ int main(int argc, char** argv) {
   SetConsoleOutputCP(CP_UTF8);
   SetConsoleCP(CP_UTF8);
 #endif
+  puzzle::cli::ParsedArgs parsed;
   try {
-    auto parsed = puzzle::cli::ParseArgs(argc, argv);
+    parsed = puzzle::cli::ParseArgs(argc, argv);
     if (parsed.show_help) {
-      puzzle::cli::PrintHelp();
+      puzzle::cli::PrintHelp(parsed.options.lang);
       return 0;
     }
     if (parsed.show_version) {
@@ -842,7 +900,7 @@ int main(int argc, char** argv) {
     return r.exit_code;
   } catch (const std::invalid_argument& e) {
     std::cerr << "Error: " << e.what() << "\n";
-    puzzle::cli::PrintHelp();
+    puzzle::cli::PrintHelp(parsed.options.lang);
     return 2;
   } catch (const std::exception& e) {
     std::cerr << "Fatal error: " << e.what() << "\n";

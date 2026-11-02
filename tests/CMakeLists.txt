@@ -95,6 +95,7 @@ set(PROD_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/../TargetListLoader.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../PuzzleDatabase.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../NetworkAPI.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../Localization.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../FoundMatchWriter.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../PuzzleSolver.cpp
   # CpuEngine + GpuEngine + the VanitySearch secp256k1 CPU path it adapts.

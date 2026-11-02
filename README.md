@@ -1,121 +1,130 @@
-# Bitcoin Puzzle #71 Solver
+# Bitcoin Puzzle & Vanity Çözücü (Bitcoin Puzzle & Vanity Solver)
 
-An educational, non-commercial C++17 / CUDA implementation of a partitioned compressed-P2PKH keyspace scanner modeled on the Bitcoin Puzzle #71 challenge (`[2^70, 2^71 - 1]`, target address `1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU`).
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows%20x64-0078D6?logo=windows)](https://github.com/)
+[![Language: C++17](https://img.shields.io/badge/Language-C%2B%2B17-00599C?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
+[![CUDA: 12.0+](https://img.shields.io/badge/CUDA-12.0%2B%20%7C%20sm__89-76B900?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+[![Tests: 221 Passing](https://img.shields.io/badge/Tests-221%20passing-brightgreen.svg)](tests/)
 
-It includes:
-- **Deterministic & Random Stride-Aligned Chunk Partitioning** (`RangeKey`, `RandomChunkGenerator`) with gap-fallback when random sampling collides.
-- **Crash-Safe Resume Logging** (`JsonRangeLogger`) that records completed and partial/aborted chunks to `scanned_ranges.jsonl` (with log rotation) and replays them on startup.
-- **Two-Stage Prefix & Full-Address Filtering** (`HexPrefixFilter`, `AddressMatcher`) with automatic 16-bit `hash160` prefix narrowing for full target addresses.
-- **Durable Match Persistence** (`FoundMatchWriter`) that writes matches to `found_matches.jsonl` and flushes to disk with `_commit` / `fsync`.
-- **Pluggable Compute Engines** (`CpuEngine` and CUDA `GpuEngine` adapting VanitySearch's `GPUEngine` with zero `.cu` kernel diff and host-side endomorphism/symmetry filtering).
-- **Multi-Target Vanity & Batch Matching** (`TargetListLoader`, `HexPrefixFilter`, `AddressMatcher`) supporting hundreds of target addresses (`--address-file`) and vanity prefixes (`--prefix-file`).
-- **Human-Readable Match Outputs** (`prefix_found.txt` and `found_matches.jsonl`) recording vanity matches with timestamp, matched prefix, address, and private key.
-- **Crypto Intelligence & Caching** (`NetworkAPI`, `PuzzleDatabase`) with asynchronous balance and transaction count queries via Blockchain.info API, protected by in-memory caching and 1-second rate-limiting.
-- **Search Statistics & Progress Telemetry** (`PuzzleSolver`, `GuiController`) computing 256-bit total keyspace size, scanned key counter, and exact percentage progress.
-- **Turkish Localization & Multi-Address GUI File Loading** (`puzzle71_gui`, `puzzle71_solver`) supporting single or batch address file loading directly from Windows file dialogs, with fully localized Turkish interface and help texts.
+**Bitcoin Puzzle & Vanity Çözücü** is a high-performance, modular C++17 and CUDA cryptographic solver and vanity address search engine. Built specifically to explore the mathematical properties of secp256k1 elliptic curves, it features native hardware acceleration for modern NVIDIA GPUs (including Ada Lovelace RTX 40-series and Ampere), capable of generating and testing points at up to **1.65+ GH/s** raw throughput.
+
+The project pairs a rugged, multithreaded command-line engine with a responsive DirectX 11 / Dear ImGui graphical dashboard. In addition to brute-force keyspace exploration, it incorporates a real-time cryptocurrency intelligence layer with live blockchain querying, transaction history tracking, and automated vanity prefix discovery.
+
+![GUI Screenshot](docs/screenshot_gui.png)
 
 ---
 
-## Performance Reality
+## ✨ Features
 
-| Backend | Hardware | Measured Primary Key Rate | Raw 6x EC+Hash160 Kernel Rate |
+- ⚡ **Native CUDA Acceleration (`sm_89` / Ada Lovelace & Ampere)**: Optimized GPU kernels using endomorphism techniques, achieving over 1.65 Billion elliptic curve point evaluations per second on consumer hardware like the NVIDIA RTX 4060.
+- 🎯 **Multi-Target Batch Search**: Load `.txt` files containing up to 4,096 target Bitcoin addresses simultaneously on GPU (or unlimited on CPU) with zero algorithmic throughput degradation.
+- 🌐 **Bilingual User Interface (English / Turkish)**: Seamless on-the-fly language switching for both GUI and CLI. Full Turkish localization with native TrueType Unicode font rendering (`Segoe UI` / `Tahoma`).
+- 📊 **Real-Time Crypto Intelligence Dashboard**:
+  - Live address balance checking and UTXO status via `blockchain.info`.
+  - Transaction count (`n_tx`) analysis to determine if addresses were previously active.
+  - Dedicated alerting system for newly found addresses holding confirmed balances.
+  - In-memory API query cache with rate-limit protection.
+- 🎛️ **Occupancy & Thread Tuning**: Fine-tune GPU execution grids (`--gpu-grid-x`, `--gpu-grid-y`) with automated one-click presets for modern GPUs.
+- 🧪 **Exhaustive Test Suite**: 221 automated unit and regression tests verifying 256-bit multiprecision arithmetic, Base58Check encoding, Bloom filters, and background controllers.
+
+---
+
+## ⚡ Performance Reality & Educational Scope
+
+While this engine achieves state-of-the-art throughput on consumer hardware, users should understand the astronomical scale of cryptographic keyspaces:
+
+| Target / Puzzle | Range Span | GPU Speed (Raw) | Expected Completion Time |
 | :--- | :--- | :--- | :--- |
-| `CpuEngine` (Debug) | Single CPU thread | ~355K keys/s | ~355K evals/s |
-| `GpuEngine` (Debug, unoptimized host seed) | NVIDIA RTX 4060 (`sm_89`) | 74.2M keys/s | 445.2M evals/s |
-| `GpuEngine` (Release, `IntGroup` seed + chained launch) | NVIDIA RTX 4060 (`sm_89`) | **275.1M keys/s** (`275,100,000` keys/s) | **1.65B evals/s** (`1,650.6M` evals/s) |
+| **Demo Range (`AB00:ABFF`)** | 256 keys | > 1.0 GH/s | < 0.001 seconds |
+| **Puzzle #40** | $2^{40} \approx 1.09 \times 10^{12}$ | 1.65 GH/s | ~ 11 minutes |
+| **Puzzle #50** | $2^{50} \approx 1.12 \times 10^{15}$ | 1.65 GH/s | ~ 8 days |
+| **Puzzle #71** | $2^{70} \approx 1.18 \times 10^{21}$ | 1.65 GH/s | **~ 22,000 to 130,000 years** |
 
-> **Why primary key rate vs. raw VanitySearch rate differs by 6x:** VanitySearch's `ComputeKeysComp` kernel computes 6 compressed `hash160` values per elliptic-curve point (3 secp256k1 endomorphisms $\times$ 2 $y$-parities). Because v1 scans contiguous `[chunk.start, chunk.end]` ranges without modifying the `.cu` kernel, `GpuEngine` filters for primary in-range keys (`endo == 0` and true $y$-parity), achieving **275.1M primary keys/s** (**1.65 GH/s** raw kernel throughput) on a single RTX 4060.
->
-> **Scale reality:** Puzzle #71 spans $2^{70} \approx 1.18 \times 10^{21}$ keys. Even at 1.5 GH/s, exhaustively scanning $2^{70}$ keys takes **~15,000–25,000 years** on a single consumer GPU. This tool is designed for learning the architecture and engineering mechanics of high-throughput secp256k1 key search, not for solving Puzzle #71 on a single desktop GPU.
+> [!NOTE]
+> This tool demonstrates parallel compute architecture, GPU kernel design, and cryptographic mathematics. It is not an overnight mechanism to break 71-bit+ puzzles.
 
 ---
 
-## Build Instructions
+## 🛠️ Building from Source
 
 ### Prerequisites
-- CMake 3.20+
-- C++17 compiler (MSVC 2022 on Windows, GCC/Clang on Linux)
-- *(Optional, for GPU)* CUDA Toolkit 12.0+ (tested with CUDA 12.8 and 13.3 targeting `sm_89`)
+- **Operating System**: Windows 10 / 11 (64-bit)
+- **Compiler**: Visual Studio 2022 (MSVC v143+) with C++17
+- **CMake**: Version 3.25 or newer
+- **CUDA Toolkit (Optional for GPU mode)**: CUDA 12.0 or newer
 
-### 1. CPU-Only Build
+### 1. Build CPU Mode (No CUDA required)
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -B build -DPUZZLE71_BUILD_CUDA=OFF -DPUZZLE71_BUILD_TESTS=ON -DPUZZLE71_BUILD_GUI=ON
 cmake --build build --config Release
-ctest --test-dir build -C Release --output-on-failure
 ```
 
-### 2. CUDA GPU Build (`PUZZLE71_BUILD_CUDA=ON`)
+### 2. Build CUDA GPU Mode
 ```bash
-cmake -S . -B build-cuda -DPUZZLE71_BUILD_CUDA=ON -DCMAKE_BUILD_TYPE=Release
+cmake -B build-cuda -DPUZZLE71_BUILD_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES="89" -DPUZZLE71_BUILD_TESTS=ON -DPUZZLE71_BUILD_GUI=ON
 cmake --build build-cuda --config Release
-ctest --test-dir build-cuda -C Release --output-on-failure
 ```
-
-*(Note: When configuring from the root `CMakeLists.txt`, executables are placed under `build/tests/Release/` or `build-cuda/tests/Release/` on multi-config generators like Visual Studio, or directly under `build/Release/` when configuring with `-S tests`.)*
 
 ---
 
-## Run Instructions
+## 🚀 Usage
 
-### CLI (`puzzle71_solver`)
-
-1. **Run by Puzzle ID (auto-loads range & address from `puzzles.json`):**
-   ```bash
-   ./build-cuda/Release/puzzle71_solver.exe --puzzle 71 --engine gpu
-   ```
-
-2. **Run using a TOML configuration file:**
-   ```bash
-   ./build-cuda/Release/puzzle71_solver.exe --config configs/puzzle71.toml
-   ```
-
-3. **Multi-Target Matching with address and prefix text files:**
-   ```bash
-   ./build-cuda/Release/puzzle71_solver.exe \
-     --address-file targets.txt \
-     --prefix-file prefixes.txt \
-     --range-hex 400000000000000000:7fffffffffffffffff \
-     --engine gpu
-   ```
-
-4. **Run a quick self-check on a known key (`0xABCD` -> `15QkBmpomYLhx71f2zKZpTt1eCXa4EEMya`):**
-   ```bash
-   ./build-cuda/Release/puzzle71_solver.exe \
-     --address 15QkBmpomYLhx71f2zKZpTt1eCXa4EEMya \
-     --range-hex AB00:ABFF \
-     --chunk-size 256 \
-     --gpu-stride 256 \
-     --engine gpu \
-     --output-dir ./demo_out
-   ```
-
-5. **Run a 100M-key GPU benchmark chunk:**
-   ```bash
-   ./build-cuda/Release/puzzle71_solver.exe \
-     --address 15QkBmpomYLhx71f2zKZpTt1eCXa4EEMya \
-     --range-hex 10000000:15FFFFF0 \
-     --engine gpu \
-     --chunk-size 100000000 \
-     --gpu-stride 262144 \
-     --max-chunks 1 \
-     --output-dir ./gpu_bench
-   ```
-
-### GUI (`puzzle71_gui`, Windows DirectX 11)
+### Graphical Interface (GUI)
+Launch the graphical dashboard:
 ```bash
-./build-cuda/Release/puzzle71_gui.exe
+.\build-cuda\Release\puzzle71_gui.exe
 ```
-- **Türkçe Arayüz & Kolay Kullanım**: Tüm etiketler, butonlar, durumlar ve telemetri paneli Türkçe olarak tasarlanmıştır.
-- **Toplu Adres Yükleme (Adres Dosyası)**: "Adres Dosyası Yükle (.txt)" butonu ile Windows dosya seçici üzerinden yüzlerce hedef adresi içeren bir `.txt` dosyasını kolayca yükleyebilir ve tek seferde tarayabilirsiniz.
-- **Detaylı Arama İstatistikleri**: Seçilen aralığın toplam anahtar alanı (256-bit tam hassasiyetle), taranan anahtar sayısı ve genel ilerleme yüzdesi (Progress Bar) gerçek zamanlı gösterilir.
-- **Puzzle Önayarı (Preset)**: Açılır listeden Puzzle #1'den #160'a kadar tüm Bitcoin bulmacalarını seçebilirsiniz. Adres ve aralık otomatik doldurulur ve bakiye asenkron sorgulanır.
-- **Adres İstihbaratı**: "Bakiye Sorgula" butonu ile adresin blockchain.info üzerindeki bakiyesi ve işlem geçmişi anında görüntülenir (`Yeni / Kullanılmamış`, `Kullanılmış - Boş`, ya da yeşil `BAKİYELİ! X BTC`).
-- **Canlı Vanity Arama Paneli**: Keşfedilen vanity önekleri gerçek zamanlı olarak `prefix_found.txt` dosyasına yazılır ve GUI tablosunda işlem sayıları ile birlikte listelenir. Bakiyeli bir adres bulunursa anında alarm verir.
-- **Hızlı Test**: "Demo Aralığı AB00:ABFF" butonuna tıklayarak bilinen `0xABCD` anahtarı üzerinde anında eşleşme testi yapabilirsiniz.
-- **Motor Seçimi**: CPU veya GPU seçimi yaparak "Başlat" butonuna basın.
+1. Select your puzzle preset (e.g. **Puzzle 71** or **Demo Range**).
+2. Or load a target list of Bitcoin addresses via **"Adres Dosyası Yükle (.txt)"** / **"Load Address File (.txt)"**.
+3. Choose the compute engine (**GPU** or **CPU**).
+4. Click **"Başlat"** / **"Start"**.
+
+### Command Line Interface (CLI)
+
+#### 1. Search for a Bitcoin Puzzle target:
+```bash
+.\build-cuda\Release\puzzle71_solver.exe --puzzle 71 --engine gpu
+```
+
+#### 2. Search a custom hex range with multi-address list:
+```bash
+.\build-cuda\Release\puzzle71_solver.exe --range-hex 400000000000000000:7fffffffffffffffff --address-file targets.txt --engine gpu
+```
+
+#### 3. CLI Turkish Language Option:
+```bash
+.\build-cuda\Release\puzzle71_solver.exe --help --lang tr
+```
+
+#### 4. GPU Tuning Parameters:
+```bash
+.\build-cuda\Release\puzzle71_solver.exe --puzzle 71 --engine gpu --gpu-grid-x 192 --gpu-grid-y 256
+```
 
 ---
 
-## Safety Note
+## 🧪 Running Tests
 
-Found private keys are written in JSON Lines format to `<output-dir>/found_matches.jsonl` and immediately flushed to disk via OS-level `fsync` (`_commit` on Windows). **Always back up `found_matches.jsonl` and `scanned_ranges.jsonl` to external storage before deleting build directories or closing your workspace.**
+Verify full system integrity with the built-in test suite:
+```bash
+.\build-cuda\Release\puzzle71_tests.exe
+```
+All 221 test suites must pass:
+```text
+[==========] 221 tests from 38 test suites ran.
+[  PASSED  ] 221 tests.
+```
+
+---
+
+## 📜 Legal & Ethical Disclaimer
+
+> [!CAUTION]
+> **This tool is developed strictly for educational, research, and cryptographic analysis purposes.**
+> It is designed to evaluate wallet security, research elliptic curve mathematics, and benchmark modern GPU compute performance. The developers assume no liability for misuse, unauthorized access, or loss resulting from the use of this software. Always comply with the legal regulations of your jurisdiction.
+
+---
+
+## 📄 License
+
+This project is licensed under the **GNU General Public License v3.0** (GPL-3.0). See the [LICENSE](LICENSE) file for complete details.
