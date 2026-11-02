@@ -69,6 +69,13 @@ class RandomChunkGenerator {
   // Internal helper to find first free gap of size >= effective_chunk_keys_
   std::optional<RangeKey> findFirstGapLocked(uint64_t needed_keys) const;
 
+  struct GapInfo {
+    RangeKey start;
+    uint64_t length = 0;
+  };
+  // Internal helper to find first free gap with length >= min_keys
+  std::optional<GapInfo> findFirstGapWithLengthLocked(uint64_t min_keys) const;
+
   // Draw uniform random key in [range_start, max_start]
   RangeKey drawRandomStartLocked(const RangeKey& max_start);
 

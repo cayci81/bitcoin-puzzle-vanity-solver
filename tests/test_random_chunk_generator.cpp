@@ -388,3 +388,39 @@ TEST(RandomChunkGeneratorConcurrency, ParallelNextProducesDisjointChunks) {
   ExpectPairwiseDisjoint(all);
   EXPECT_EQ(gen.getStats().chunks_issued, 800u);
 }
+
+// ------------------------------------------------------------- 4B range test
+
+TEST(RandomChunkGeneratorExhaustion, FourBillionRangeDoesNotPrematurelyExhaustAt31Chunks) {
+  // Simulates user's 4.02 Billion range (0x545c306bb30a36b7af to 0x545c306bb3fa36b7af).
+  // Total span = 4,026,531,841 keys.
+  // Chunk size = 100M, stride = 262,144.
+  // With pure 100M chunks, Renyi parking jams after ~31 chunks (~3.1 Billion keys)
+  // leaving ~926 Million keys in sub-100M gaps.
+  // The generator must continue scanning sub-chunk gaps >= stride, issuing ~41 chunks
+  // and leaving no gap >= stride unscanned.
+  GeneratorConfig cfg;
+  cfg.range_start = RK("545c306bb30a36b7af");
+  cfg.range_end = RK("545c306bb3fa36b7af");
+  cfg.chunk_size = 100'000'000;
+  cfg.gpu_stride = 262144;
+  cfg.max_collision_retries = 8;
+  cfg.seed = 42;
+
+  RandomChunkGenerator gen(cfg);
+  auto chunks = Drain(gen);
+  ExpectPairwiseDisjoint(chunks);
+
+  // Must issue > 35 chunks (typically 50-60 chunks including sub-chunk gaps) rather than stopping at 31
+  EXPECT_GT(chunks.size(), 35u);
+  EXPECT_LE(chunks.size(), 70u);
+
+  // Total keys scanned must cover > 99.9% of the 4.02 Billion keys
+  uint64_t total_scanned = 0;
+  for (const auto& c : chunks) {
+    total_scanned += c.scanned_keys;
+    EXPECT_GE(c.scanned_keys, cfg.gpu_stride);
+    EXPECT_EQ(c.scanned_keys % cfg.gpu_stride, 0u);
+  }
+  EXPECT_GT(total_scanned, 4'000'000'000ULL);
+}

@@ -41,41 +41,66 @@ std::optional<Chunk> RandomChunkGenerator::next() {
   RangeKey max_start(max_s_val);
 
   RangeKey chosen_start;
-  bool found_random = false;
-  uint32_t collisions = 0;
+  uint64_t chosen_keys = effective_chunk_keys_;
+  bool found = false;
 
-  // Try random placements up to max_collision_retries collisions
-  while (collisions <= config_.max_collision_retries) {
-    RangeKey candidate = drawRandomStartLocked(max_start);
-    if (!overlapsLocked(candidate, effective_chunk_keys_)) {
-      chosen_start = candidate;
-      found_random = true;
-      break;
+  // 1. Try random placements up to max_collision_retries collisions if range is wide enough
+  if (config_.range_start <= max_start) {
+    uint32_t collisions = 0;
+    while (collisions <= config_.max_collision_retries) {
+      RangeKey candidate = drawRandomStartLocked(max_start);
+      if (!overlapsLocked(candidate, effective_chunk_keys_)) {
+        chosen_start = candidate;
+        chosen_keys = effective_chunk_keys_;
+        found = true;
+        random_hits_++;
+        break;
+      }
+      collisions++;
     }
-    collisions++;
   }
 
-  // Fallback: switch to deterministic gap scan if random placement collided too many times
-  if (!found_random) {
+  // 2. Fallback: switch to deterministic gap scan if random placement collided or wasn't possible
+  if (!found) {
     auto gap = findFirstGapLocked(effective_chunk_keys_);
-    if (!gap.has_value()) {
-      return std::nullopt;  // Range exhausted: no free contiguous gap >= effective_chunk_keys_
+    if (gap.has_value()) {
+      chosen_start = *gap;
+      chosen_keys = effective_chunk_keys_;
+      found = true;
+      gap_fallback_hits_++;
     }
-    chosen_start = *gap;
-    gap_fallback_hits_++;
-  } else {
-    random_hits_++;
+  }
+
+  // 3. Fallback: if no gap >= effective_chunk_keys_ remains, scan remaining sub-chunk gaps >= gpu_stride
+  //    to prevent premature range exhaustion (e.g. Renyi parking jam leaving unvisited gaps).
+  if (!found) {
+    auto subgap = findFirstGapWithLengthLocked(config_.gpu_stride);
+    if (subgap.has_value()) {
+      chosen_start = subgap->start;
+      chosen_keys = (subgap->length / config_.gpu_stride) * config_.gpu_stride;
+      if (chosen_keys > effective_chunk_keys_) {
+        chosen_keys = effective_chunk_keys_;
+      }
+      if (chosen_keys >= config_.gpu_stride) {
+        found = true;
+        gap_fallback_hits_++;
+      }
+    }
+  }
+
+  if (!found) {
+    return std::nullopt;  // Range truly exhausted: no free contiguous gap >= gpu_stride remains
   }
 
   chunks_issued_++;
-  RangeKey chosen_end = chosen_start.plus(effective_chunk_keys_ - 1);
+  RangeKey chosen_end = chosen_start.plus(chosen_keys - 1);
   addIntervalLocked(chosen_start, chosen_end);
 
   Chunk c;
   c.start = chosen_start;
   c.end = chosen_end;
   c.requested_keys = config_.chunk_size;
-  c.scanned_keys = effective_chunk_keys_;
+  c.scanned_keys = chosen_keys;
   return c;
 }
 
@@ -173,6 +198,47 @@ std::optional<RangeKey> RandomChunkGenerator::findFirstGapLocked(uint64_t needed
     RangeKey needed_end = cursor.plus(needed_keys - 1);
     if (needed_end <= config_.range_end) {
       return cursor;
+    }
+  }
+
+  return std::nullopt;
+}
+
+std::optional<RandomChunkGenerator::GapInfo>
+RandomChunkGenerator::findFirstGapWithLengthLocked(uint64_t min_keys) const {
+  RangeKey cursor = config_.range_start;
+
+  for (const auto& [start, end] : scanned_intervals_) {
+    if (start > cursor) {
+      // Gap exists between cursor and start - 1.
+      // Number of keys in [cursor, start - 1] is cursor.distanceTo(start).
+      Int gap_dist = cursor.distanceTo(start);
+      Int min_req(min_keys);
+      if (!gap_dist.IsLower(&min_req)) {
+        uint64_t len = (gap_dist.bits64[1] > 0 || gap_dist.bits64[2] > 0 ||
+                        gap_dist.bits64[3] > 0 || gap_dist.bits64[4] > 0)
+                           ? UINT64_MAX
+                           : gap_dist.bits64[0];
+        return GapInfo{cursor, len};
+      }
+    }
+    if (end >= config_.range_end) {
+      return std::nullopt;
+    }
+    cursor = end.plus(1);
+  }
+
+  // Check tail gap after last interval up to range_end
+  if (cursor <= config_.range_end) {
+    Int tail_dist = cursor.distanceTo(config_.range_end);
+    tail_dist.AddOne();  // inclusive of range_end
+    Int min_req(min_keys);
+    if (!tail_dist.IsLower(&min_req)) {
+      uint64_t len = (tail_dist.bits64[1] > 0 || tail_dist.bits64[2] > 0 ||
+                      tail_dist.bits64[3] > 0 || tail_dist.bits64[4] > 0)
+                         ? UINT64_MAX
+                         : tail_dist.bits64[0];
+      return GapInfo{cursor, len};
     }
   }
 

@@ -91,6 +91,31 @@ TEST(RangeKeyTest, DistanceToConsistency) {
   }
 }
 
+TEST(RangeKeyTest, DistanceToLargeHex) {
+  // Test 1: User's exact range 545c306bb30a36b7af to 545c306bb3fa36b7af
+  // Characters from right: index 7 is 0 vs f, indices 0..6 (a36b7af) are identical.
+  // Mathematical difference is exactly 0xF0000000 (4,026,531,840), span is 4,026,531,841.
+  RangeKey a = RangeKey::FromHex("545c306bb30a36b7af");
+  RangeKey b = RangeKey::FromHex("545c306bb3fa36b7af");
+  Int dist = a.distanceTo(b);
+  EXPECT_EQ(dist.bits64[0], 0x00000000F0000000ULL);
+  EXPECT_EQ(dist.bits64[1], 0x0ULL);
+
+  // Test 2: True 16.49 Trillion difference across 44 bits (0xF0000000000 = 16,492,674,416,640)
+  RangeKey c = RangeKey::FromHex("545c3060b30a36b7af");
+  RangeKey d = RangeKey::FromHex("545c306fb30a36b7af");
+  Int dist_trillion = c.distanceTo(d);
+  EXPECT_EQ(dist_trillion.bits64[0], 0x00000F0000000000ULL);
+  EXPECT_EQ(dist_trillion.bits64[1], 0x0ULL);
+
+  // Test 3: Large difference spanning across 64-bit limb boundaries with borrow propagation
+  RangeKey limb_lo = RangeKey::FromHex("0000000000000001fffffffffffffffe");
+  RangeKey limb_hi = RangeKey::FromHex("00000000000000020000000000000004");
+  Int limb_dist = limb_lo.distanceTo(limb_hi);
+  EXPECT_EQ(limb_dist.bits64[0], 0x6ULL);
+  EXPECT_EQ(limb_dist.bits64[1], 0x0ULL);
+}
+
 // 4. Comparison Operators & Strict Total Order
 TEST(RangeKeyTest, StrictTotalOrder) {
   RangeKey a = RangeKey::FromHex("1000");
