@@ -700,9 +700,22 @@ void DrawTelemetryPanel(AppState& app, const GuiStats& stats) {
   }
 }
 
+const ImWchar* GetGlyphRangesTurkish() {
+  static const ImWchar ranges[] = {
+      0x0020, 0x017F,  // Basic Latin, Latin-1 Supplement, Latin Extended-A (covers Turkish çÇğĞıİöÖşŞüÜ)
+      0x20BA, 0x20BA,  // Turkish Lira symbol (₺)
+      0,
+  };
+  return ranges;
+}
+
 }  // namespace
 
 int main(int, char**) {
+#ifdef _WIN32
+  SetConsoleOutputCP(CP_UTF8);
+  SetConsoleCP(CP_UTF8);
+#endif
   WNDCLASSEXW wc = {
       sizeof(wc),
       CS_CLASSDC,
@@ -738,6 +751,28 @@ int main(int, char**) {
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   ImGui::StyleColorsDark();
+
+  // Load Turkish Unicode font (Segoe UI / Tahoma / Arial)
+  ImFont* font = nullptr;
+  const char* font_candidates[] = {
+      "C:\\Windows\\Fonts\\segoeui.ttf",
+      "C:\\Windows\\Fonts\\tahoma.ttf",
+      "C:\\Windows\\Fonts\\arial.ttf"
+  };
+  for (const char* font_path : font_candidates) {
+    std::error_code ec;
+    if (std::filesystem::exists(font_path, ec)) {
+      font = io.Fonts->AddFontFromFileTTF(font_path, 16.0f, nullptr, GetGlyphRangesTurkish());
+      if (font) {
+        break;
+      }
+    }
+  }
+  if (!font) {
+    std::fprintf(stderr, "Uyarı: Türkçe Unicode yazı tipi yüklenemedi, varsayılan fonta dönülüyor.\n");
+    io.Fonts->AddFontDefault();
+  }
+  io.Fonts->Build();
 
   ImGui_ImplWin32_Init(hwnd);
   ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
