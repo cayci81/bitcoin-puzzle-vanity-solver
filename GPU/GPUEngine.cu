@@ -610,8 +610,8 @@ bool GPUEngine::Launch(std::vector<ITEM> &prefixFound,bool spinWait,bool launchN
     // prefix has been lost
     if (!lostWarning) {
       printf("\nWarning, %d items lost\nHint: Search with less prefixes, less threads (-g) or increase maxFound (-m)\n", (nbFound - maxFound));
-      lostWarning = true;
     }
+    lostWarning = true;
     nbFound = maxFound;
   }
 

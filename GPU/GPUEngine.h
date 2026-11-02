@@ -73,6 +73,9 @@ public:
   bool Check(Secp256K1 *secp);
   std::string deviceName;
 
+  bool HasLostItems() const { return lostWarning; }
+  void ClearLostItems() { lostWarning = false; }
+
   static void PrintCudaInfo();
   static void GenerateCode(Secp256K1 *secp, int size);
 

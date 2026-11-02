@@ -428,5 +428,31 @@ TEST_F(GpuEngineTest, SolverFindsRealFullMatchWithGpuEngine) {
   EXPECT_EQ(solver.getStats().chunks_scanned, 1u);
 }
 
+TEST_F(GpuEngineTest, GpuEngineOverflowThrows) {
+  // Set max_found = 1 so that finding 2 items overflows maxFound.
+  GpuEngineConfig cfg;
+  cfg.max_found = 1;
+
+  unsigned char h1[20];
+  std::string a1;
+  AddressOf("1234", h1, &a1);
+
+  unsigned char h2[20];
+  std::string a2;
+  AddressOf("1235", h2, &a2);
+
+  std::vector<uint8_t> gpu_table(65536, 0);
+  gpu_table[Prefix16(h1)] = 1;
+  gpu_table[Prefix16(h2)] = 1;
+
+  GpuEngine gpu(secp_, gpu_table, cfg);
+  std::atomic<bool> stop{false};
+  Chunk chunk = ChunkAt(RK("1200"), 2048);
+
+  EXPECT_THROW({
+    gpu.scan(chunk, gpu_table, stop);
+  }, std::runtime_error);
+}
+
 #endif  // PUZZLE71_ENABLE_CUDA
 

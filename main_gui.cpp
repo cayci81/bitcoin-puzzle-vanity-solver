@@ -576,6 +576,7 @@ void DrawTelemetryPanel(AppState& app, const GuiStats& stats) {
     ImGui::Text("Anlık Parça Aralığı  : %s : %s",
                 stats.current_range_start.c_str(),
                 stats.current_range_end.c_str());
+    ImGui::TextDisabled("(Arama rastgele aralıklarla yapılır. Aynı aralıkta farklı parçalar taranıyor olabilir)");
   }
   if (stats.state == GuiState::Running && stats.current_chunk_progress > 0.0) {
     ImGui::ProgressBar(static_cast<float>(stats.current_chunk_progress),

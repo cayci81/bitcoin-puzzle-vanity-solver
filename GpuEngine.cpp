@@ -324,6 +324,7 @@ EngineBatchResult GpuEngine::scan(const Chunk& chunk,
     throw std::runtime_error("GPUEngine::SetKeys failed");
   }
 
+  impl_->gpu->ClearLostItems();
   uint64_t done = 0;
   for (uint64_t step = 0; step < num_steps; ++step) {
     if (stop_flag.load(std::memory_order_acquire)) {
@@ -338,6 +339,11 @@ EngineBatchResult GpuEngine::scan(const Chunk& chunk,
     std::vector<::ITEM> found;
     if (!impl_->gpu->Launch(found, /*spinWait=*/true, launch_next)) {
       throw std::runtime_error("GPUEngine::Launch failed");
+    }
+
+    if (impl_->gpu->HasLostItems()) {
+      throw std::runtime_error(
+          "GPU tampon belleği doldu (çok fazla eşleşme). Lütfen adres sayısını azaltın veya chunk boyutunu düşürün.");
     }
 
     for (const auto& it : found) {

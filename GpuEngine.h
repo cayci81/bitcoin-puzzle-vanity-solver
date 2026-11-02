@@ -19,10 +19,10 @@ struct GpuEngineConfig {
   //   grid_size_x = -1  => 8 * deviceProp.multiProcessorCount blocks
   //   grid_size_y = 128 => 128 threads per block
   //   nbThread    = grid_size_x * grid_size_y
-  //   max_found   = 65536 ITEMs per kernel launch
+  //   max_found   = 1048576 ITEMs per kernel launch (~28 MB)
   int grid_size_x = -1;
   int grid_size_y = 128;
-  uint32_t max_found = 65536;
+  uint32_t max_found = 1048576;
 };
 
 struct GpuEngineHooks {
@@ -40,7 +40,7 @@ class GpuEngine : public IEngine {
   // Matches GRP_SIZE (GPU/GPUGroup.h:3) and STEP_SIZE (GPU/GPUEngine.h:31).
   static constexpr int kGroupSize = 1024;
   static constexpr int kStepSize = 1024;
-  static constexpr uint32_t kDefaultMaxFound = 65536;
+  static constexpr uint32_t kDefaultMaxFound = 1048576;
   static constexpr size_t kGpuTableSize = 65536;
   static constexpr size_t kMaxGpuTablePopcount = 4096;
 
