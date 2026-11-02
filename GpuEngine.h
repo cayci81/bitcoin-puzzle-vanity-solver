@@ -42,12 +42,12 @@ class GpuEngine : public IEngine {
   static constexpr int kStepSize = 1024;
   static constexpr uint32_t kDefaultMaxFound = 65536;
   static constexpr size_t kGpuTableSize = 65536;
-  static constexpr size_t kMaxGpuTablePopcount = 64;
+  static constexpr size_t kMaxGpuTablePopcount = 4096;
 
   static size_t countActivePrefixes(const std::vector<uint8_t>& gpu_table);
   static void validateGpuTable(const std::vector<uint8_t>& gpu_table);
 
-  // Throws std::runtime_error if dense table popcount > 64.
+  // Throws std::runtime_error if dense table popcount > 4096.
   explicit GpuEngine(std::shared_ptr<Secp256K1> secp,
                      const std::vector<uint8_t>& gpu_table,
                      int gpu_id);

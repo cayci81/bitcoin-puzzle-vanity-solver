@@ -477,6 +477,14 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
         }
       }
 
+      // If user selected GPU but loaded more than 4096 addresses, auto-fallback to CPU
+      if (opts.engine == "gpu" && opts.address_list.size() > 4096) {
+        opts.engine = "cpu";
+        app.engine_idx = 0;
+        std::snprintf(app.last_action_buf, sizeof(app.last_action_buf),
+                      "Uyarı: 4096'dan fazla adres yüklendi, CPU motoruna geçildi.");
+      }
+
       app.options    = opts;
       app.controller = std::make_unique<GuiController>(opts);
       app.last_fs_check = {};

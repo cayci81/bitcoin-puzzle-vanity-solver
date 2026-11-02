@@ -720,3 +720,27 @@ TEST(CliContextTest, AddressListInitializesMatcherAndStats) {
   EXPECT_EQ(stats.total_keyspace, 256ull);
   EXPECT_EQ(stats.total_keyspace_str, "256");
 }
+
+TEST(CliContextTest, SeventySevenAddressesAccepted) {
+  TempDir temp_dir;
+  CliOptions options;
+  options.range_start = RangeKey::FromHex("AB00");
+  options.range_end = RangeKey::FromHex("ABFF");
+  options.chunk_size = 256;
+  options.gpu_stride = 256;
+  options.output_dir = temp_dir.path();
+#ifdef PUZZLE71_ENABLE_CUDA
+  options.engine = "gpu";
+#else
+  options.engine = "cpu";
+#endif
+  for (int i = 1; i <= 77; ++i) {
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "%X", i + 100);
+    options.address_list.push_back(CompressedAddressForHexKey(buf));
+  }
+  EXPECT_NO_THROW({
+    SolverContext ctx(options);
+    EXPECT_NE(ctx.matcher, nullptr);
+  });
+}

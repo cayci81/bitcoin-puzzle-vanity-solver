@@ -684,9 +684,11 @@ SolverContext::SolverContext(const CliOptions& opts) : options(opts) {
     try {
       engine = std::make_shared<GpuEngine>(secp, gpu_table, options.gpu_id);
     } catch (const std::runtime_error& e) {
-      if (std::string(e.what()).find("popcount") != std::string::npos) {
+      if (std::string(e.what()).find("popcount") != std::string::npos ||
+          std::string(e.what()).find("4096") != std::string::npos ||
+          std::string(e.what()).find("önek") != std::string::npos) {
         throw std::runtime_error(
-            "Too many prefixes for GPU. Reduce prefixes to <= 64 or use CPU mode.");
+            "GPU motoru tek seferde en fazla 4096 önek arayabilir. Lütfen adres sayısını azaltın veya CPU motorunu kullanın.");
       }
       throw;
     }

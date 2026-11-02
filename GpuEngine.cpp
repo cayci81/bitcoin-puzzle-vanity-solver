@@ -212,8 +212,7 @@ void GpuEngine::validateGpuTable(const std::vector<uint8_t>& table) {
   }
   if (countActivePrefixes(table) > kMaxGpuTablePopcount) {
     throw std::runtime_error(
-        "GpuEngine requires gpu_table popcount <= 64 to prevent maxFound overflow; "
-        "use CpuEngine for dense filters.");
+        "GPU motoru tek seferde en fazla 4096 önek arayabilir. Lütfen adres sayısını azaltın veya CPU motorunu kullanın.");
   }
 }
 

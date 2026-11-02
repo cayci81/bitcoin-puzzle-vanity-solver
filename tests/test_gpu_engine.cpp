@@ -139,13 +139,21 @@ std::shared_ptr<Secp256K1> GpuEngineTest::secp_;
 TEST_F(GpuEngineTest, DenseGpuTableRejectedAtConstruction) {
   std::vector<uint8_t> dense_table(65536, 0);
   for (size_t i = 0; i <= GpuEngine::kMaxGpuTablePopcount; ++i) {
-    dense_table[i] = 1;  // 65 active prefixes > kMaxGpuTablePopcount (64)
+    dense_table[i] = 1;  // 4097 active prefixes > kMaxGpuTablePopcount (4096)
   }
   EXPECT_THROW(GpuEngine(secp_, dense_table), std::runtime_error);
 
-  // Boundary: exactly kMaxGpuTablePopcount (64) is accepted.
+  // Boundary: exactly kMaxGpuTablePopcount (4096) is accepted.
   dense_table[GpuEngine::kMaxGpuTablePopcount] = 0;
   EXPECT_NO_THROW(GpuEngine(secp_, dense_table));
+}
+
+TEST_F(GpuEngineTest, GpuEngineAccepts100Prefixes) {
+  std::vector<uint8_t> table(65536, 0);
+  for (size_t i = 0; i < 100; ++i) {
+    table[i * 137 % 65536] = 1;
+  }
+  EXPECT_NO_THROW(GpuEngine(secp_, table));
 }
 
 #ifdef PUZZLE71_ENABLE_CUDA
@@ -234,11 +242,11 @@ TEST_F(GpuEngineTest, GpuMatchesCpuOnMultiHit) {
 }
 
 TEST_F(GpuEngineTest, GpuMatchesCpuOnDensePrefixTable) {
-  // Enable kMaxGpuTablePopcount (64) distinct 16-bit prefixes and compare
+  // Enable 64 distinct 16-bit prefixes and compare
   // GpuEngine vs CpuEngine via set-equality. Also verifies that no
   // endomorphism (endo != 0) or symmetric (-k mod n) false positives leak.
   std::vector<uint8_t> gpu_table(65536, 0);
-  for (size_t i = 0; i < GpuEngine::kMaxGpuTablePopcount; ++i) {
+  for (size_t i = 0; i < 64; ++i) {
     gpu_table[i * 1021 % 65536] = 1;
   }
 
