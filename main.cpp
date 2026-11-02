@@ -39,6 +39,7 @@
 #include "RangeKey.h"
 #include "SECP256K1.h"
 #include "TargetListLoader.h"
+#include "PuzzleDatabase.h"
 #include "hash/sha256.h"
 
 namespace puzzle::cli {
@@ -266,6 +267,7 @@ void PrintHelp() {
       << "  --output-dir <dir>               Directory for scanned_ranges.jsonl & found_matches.jsonl\n"
       << "  --engine <cpu|gpu>               Execution engine (default: cpu)\n"
       << "  --gpu-id <id>                    GPU device ID (default: 0)\n"
+      << "  --puzzle <id>                    Bitcoin puzzle ID from puzzles.json (auto range & address)\n"
       << "  --max-chunks <N>                 Stop after N chunks (0 = unlimited)\n"
       << "  --prefix-hex <csv>               Comma-separated hash160 hex prefixes (e.g. 5abc,6123)\n"
       << "  --prefix-b58 <prefix>            Base58 address prefix (repeatable, e.g. 1PWo3)\n"
@@ -512,6 +514,23 @@ ParsedArgs ParseArgs(int argc, char** argv) {
     } else if (arg == "--prefix-file") {
       parsed.options.prefix_file = require_value(i, arg);
       (void)TargetListLoader::loadPrefixes(parsed.options.prefix_file);
+    } else if (arg == "--puzzle") {
+      int pid = ParseStrictInt(require_value(i, arg), arg);
+      if (pid <= 0) {
+        throw std::invalid_argument("--puzzle ID must be > 0");
+      }
+      parsed.options.puzzle_id = pid;
+      auto puzzles = PuzzleDatabase::load("");
+      const auto* entry = PuzzleDatabase::findById(puzzles, pid);
+      if (!entry) {
+        throw std::invalid_argument("Puzzle ID " + std::to_string(pid) + " not found in puzzles.json");
+      }
+      parsed.options.range_start = RangeKey::FromHex(entry->start_hex);
+      parsed.options.range_end = RangeKey::FromHex(entry->end_hex);
+      if (parsed.options.address.empty()) {
+        parsed.options.address = entry->address;
+      }
+      has_range = true;
     } else {
       throw std::invalid_argument("Unknown flag: " + arg);
     }
@@ -679,6 +698,7 @@ SolverContext::SolverContext(const CliOptions& opts) : options(opts) {
   solver_cfg.stop_flag = &stop_flag;
   solver_cfg.worker_id = 0;
   solver_cfg.max_chunks = options.max_chunks;
+  solver_cfg.on_prefix_found = options.on_prefix_found;
 
   solver = std::make_unique<PuzzleSolver>(
       engine, generator, logger, matcher, writer, solver_cfg);

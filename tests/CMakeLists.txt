@@ -3,6 +3,8 @@ project(puzzle71_tests LANGUAGES CXX)
 
 option(PUZZLE71_BUILD_CUDA "Build the CUDA-backed GpuEngine" OFF)
 
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -27,7 +29,19 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(nlohmann_json)
 
-# 3. Dear ImGui (v1.90.1)
+# 3. CPR (C++ Requests v1.10.5)
+FetchContent_Declare(
+  cpr
+  GIT_REPOSITORY https://github.com/libcpr/cpr.git
+  GIT_TAG 1.10.5
+)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(CPR_USE_SYSTEM_CURL OFF CACHE BOOL "" FORCE)
+set(CPR_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(CPR_ENABLE_SSL ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(cpr)
+
+# 4. Dear ImGui (v1.90.1)
 FetchContent_Declare(
   imgui
   GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -62,7 +76,9 @@ set(TEST_SOURCES
   test_gpu_engine.cpp
   test_cli.cpp
   test_gui_controller.cpp
-  test_target_list_loader.cpp)
+  test_target_list_loader.cpp
+  test_puzzle_database.cpp
+  test_network_api.cpp)
 set(PROD_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/../GuiController.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../Int.cpp
@@ -75,6 +91,8 @@ set(PROD_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/../JsonRangeLogger.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../PrefixFilter.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../TargetListLoader.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../PuzzleDatabase.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../NetworkAPI.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../FoundMatchWriter.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../PuzzleSolver.cpp
   # CpuEngine + GpuEngine + the VanitySearch secp256k1 CPU path it adapts.
@@ -102,6 +120,7 @@ target_include_directories(puzzle71_core PUBLIC
 
 target_link_libraries(puzzle71_core PUBLIC
   nlohmann_json::nlohmann_json
+  cpr::cpr
 )
 
 if(MSVC)

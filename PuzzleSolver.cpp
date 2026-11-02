@@ -58,6 +58,11 @@ SolverExitReason PuzzleSolver::run() {
     }
 
     Chunk chunk = *opt_chunk;
+    {
+      std::lock_guard<std::mutex> lock(range_mu_);
+      current_range_start_ = chunk.start.ToHex();
+      current_range_end_ = chunk.end.ToHex();
+    }
     EngineBatchResult result;
     if (engine_->reportsLiveProgress()) {
       engine_->setProgressCounter(&keys_scanned_);
@@ -93,6 +98,9 @@ SolverExitReason PuzzleSolver::run() {
           rec.private_key_hex = result.matched_privkeys_hex[i];
         }
         writer_->recordMatch(rec);
+        if (config_.on_prefix_found) {
+          config_.on_prefix_found(addr);
+        }
       } else if (match_res.kind == MatchKind::Full) {
         matches_found_.fetch_add(1, std::memory_order_relaxed);
         FoundMatchRecord rec;
@@ -151,6 +159,12 @@ SolverStats PuzzleSolver::getStats() const {
   stats.chunks_scanned = chunks_scanned_.load(std::memory_order_relaxed);
   stats.keys_scanned = keys_scanned_.load(std::memory_order_relaxed);
   stats.matches_found = matches_found_.load(std::memory_order_relaxed);
+
+  {
+    std::lock_guard<std::mutex> lock(range_mu_);
+    stats.current_range_start = current_range_start_;
+    stats.current_range_end = current_range_end_;
+  }
 
   if (started_.load(std::memory_order_acquire)) {
     const auto end = finished_.load(std::memory_order_acquire)

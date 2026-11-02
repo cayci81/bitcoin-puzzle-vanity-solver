@@ -37,7 +37,9 @@ struct CliOptions {
   std::string engine = "cpu";             // "cpu" or "gpu"
   int gpu_id = 0;
   uint64_t max_chunks = 0;                // 0 = unlimited
+  int puzzle_id = 0;                      // --puzzle <id>: auto-load from puzzles.json
   bool use_endomorphism = false;          // reserved for v2
+  std::function<void(const std::string& address)> on_prefix_found = nullptr;
 };
 
 struct ParsedArgs {

@@ -536,3 +536,25 @@ TEST_F(GuiControllerDestructor, DestructorOnIdleIsNoOp) {
     EXPECT_EQ(controller.getStats().state, GuiState::Idle);
   }
 }
+
+TEST_F(GuiControllerLifecycle, PopFoundPrefixesCapturesPrefixes) {
+  TempDir temp_dir;
+  CliOptions opts;
+  opts.range_start = RangeKey::FromHex("AB00");
+  opts.range_end = RangeKey::FromHex("ABFF");
+  opts.chunk_size = 256;
+  opts.gpu_stride = 256;
+  opts.prefix_b58.push_back("1PWo");
+  opts.engine = "cpu";
+  opts.output_dir = temp_dir.path();
+
+  GuiController controller(opts);
+  ASSERT_TRUE(controller.start());
+  controller.wait();
+
+  auto stats = controller.getStats();
+  EXPECT_NE(stats.state, GuiState::Error);
+  auto prefixes = controller.popFoundPrefixes();
+  auto prefixes2 = controller.popFoundPrefixes();
+  EXPECT_TRUE(prefixes2.empty());
+}

@@ -3,7 +3,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -25,6 +27,8 @@ struct SolverStats {
   // If run() is called multiple times, timing continues from the initial start time.
   double elapsed_seconds = 0.0;
   double rate_keys_per_sec = 0.0;
+  std::string current_range_start;
+  std::string current_range_end;
 };
 
 enum class SolverExitReason {
@@ -40,6 +44,7 @@ struct SolverConfig {
   // and FoundMatchWriter records.
   int worker_id = 0;
   uint64_t max_chunks = 0;  // 0 = unlimited, >0 = limit number of chunks scanned
+  std::function<void(const std::string& address)> on_prefix_found = nullptr;
 };
 
 class PuzzleSolver {
@@ -75,6 +80,9 @@ class PuzzleSolver {
   std::atomic<uint64_t> chunks_scanned_{0};
   std::atomic<uint64_t> keys_scanned_{0};
   std::atomic<uint64_t> matches_found_{0};
+  mutable std::mutex range_mu_;
+  std::string current_range_start_;
+  std::string current_range_end_;
 };
 
 }  // namespace puzzle

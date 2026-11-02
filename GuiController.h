@@ -25,6 +25,9 @@ struct GuiStats {
   double      rate_keys_per_sec = 0.0;
   uint64_t    matches_found     = 0;
   std::string last_error;
+  std::string current_range_start;
+  std::string current_range_end;
+  double      current_chunk_progress = 0.0;
 };
 
 class GuiController {
@@ -72,6 +75,9 @@ class GuiController {
   std::filesystem::path foundMatchesPath() const;
   std::filesystem::path scannedRangesPath() const;
 
+  // Retrieve and clear any newly discovered prefix match addresses. Thread-safe.
+  std::vector<std::string> popFoundPrefixes();
+
  private:
   puzzle::cli::CliOptions options_;
   std::unique_ptr<puzzle::cli::SolverContext> ctx_;   // built in start()
@@ -84,6 +90,9 @@ class GuiController {
   std::string        last_error_;
   SolverStats        final_stats_{};
   bool               has_final_stats_ = false;
+
+  mutable std::mutex       prefix_mu_;
+  std::vector<std::string> found_prefixes_;
 };
 
 }  // namespace puzzle::gui

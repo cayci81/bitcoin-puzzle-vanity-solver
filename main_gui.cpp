@@ -16,12 +16,18 @@
 #include <filesystem>
 #include <memory>
 
+#include <future>
+#include <map>
+#include <vector>
+
 #include "imgui.h"
 #include "imgui_impl_dx11.h"
 #include "imgui_impl_win32.h"
 
 #include "GpuEngine.h"
 #include "GuiController.h"
+#include "PuzzleDatabase.h"
+#include "NetworkAPI.h"
 #include "cli.h"
 
 // Forward declare message handler from imgui_impl_win32.cpp
@@ -172,6 +178,22 @@ struct AppState {
   GuiState last_fs_state   = GuiState::Idle;
   bool cached_has_matches  = false;
   bool cached_has_log      = false;
+
+  // Puzzles and Balance Intelligence
+  std::vector<PuzzleEntry> puzzles;
+  int selected_puzzle_idx = -1;
+  std::future<std::map<std::string, uint64_t>> balance_future;
+  bool checking_balance = false;
+  std::string balance_status = "Not checked";
+  bool is_funded = false;
+  uint64_t current_balance_satoshis = 0;
+
+  // Prefix match background checking
+  std::future<std::map<std::string, uint64_t>> prefix_balance_future;
+  bool checking_prefix_balance = false;
+  std::vector<std::string> pending_check_prefixes;
+  std::vector<std::string> funded_prefixes_found;
+  bool alert_funded_prefix = false;
 };
 
 void DrawConfigPanel(AppState& app, const GuiStats& stats) {
@@ -185,6 +207,39 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
                          stats.state == GuiState::Error);
 
   ImGui::BeginDisabled(!can_edit);
+
+  if (!app.puzzles.empty()) {
+    std::string preview = (app.selected_puzzle_idx >= 0 && app.selected_puzzle_idx < static_cast<int>(app.puzzles.size()))
+                          ? "Puzzle #" + std::to_string(app.puzzles[app.selected_puzzle_idx].id) + " (" + std::to_string(app.puzzles[app.selected_puzzle_idx].bits) + " bits)"
+                          : "Select Bitcoin Puzzle...";
+    if (ImGui::BeginCombo("Puzzle Preset", preview.c_str())) {
+      for (int i = 0; i < static_cast<int>(app.puzzles.size()); ++i) {
+        const bool is_selected = (app.selected_puzzle_idx == i);
+        std::string label = "Puzzle #" + std::to_string(app.puzzles[i].id) + " (" + std::to_string(app.puzzles[i].bits) + " bits, " + std::to_string(app.puzzles[i].reward) + " BTC)";
+        if (ImGui::Selectable(label.c_str(), is_selected)) {
+          app.selected_puzzle_idx = i;
+          const auto& p = app.puzzles[i];
+          std::snprintf(app.address_buf, sizeof(app.address_buf), "%s", p.address.c_str());
+          std::snprintf(app.range_start_buf, sizeof(app.range_start_buf), "%s", p.start_hex.c_str());
+          std::snprintf(app.range_end_buf, sizeof(app.range_end_buf), "%s", p.end_hex.c_str());
+          // Auto trigger async balance check on selection
+          if (!p.address.empty()) {
+            app.checking_balance = true;
+            app.balance_status = "Checking balance...";
+            std::string addr = p.address;
+            app.balance_future = std::async(std::launch::async, [addr]() {
+              return NetworkAPI::QueryBalances({addr});
+            });
+          }
+        }
+        if (is_selected) {
+          ImGui::SetItemDefaultFocus();
+        }
+      }
+      ImGui::EndCombo();
+    }
+  }
+
   if (ImGui::SmallButton("Load Puzzle 71 range")) {
     std::strncpy(app.address_buf,
                  "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU",
@@ -250,6 +305,54 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
     }
   }
   ImGui::InputText("Address", app.address_buf, sizeof(app.address_buf));
+  ImGui::SameLine();
+  if (ImGui::SmallButton("Check Balance")) {
+    if (std::strlen(app.address_buf) > 0) {
+      app.checking_balance = true;
+      app.balance_status = "Checking blockchain.info...";
+      std::string addr = app.address_buf;
+      app.balance_future = std::async(std::launch::async, [addr]() {
+        return NetworkAPI::QueryBalances({addr});
+      });
+    }
+  }
+
+  // Poll balance future
+  if (app.checking_balance && app.balance_future.valid()) {
+    if (app.balance_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+      try {
+        auto res = app.balance_future.get();
+        app.checking_balance = false;
+        std::string addr = app.address_buf;
+        if (res.find(addr) != res.end()) {
+          uint64_t sats = res[addr];
+          app.current_balance_satoshis = sats;
+          if (sats > 0) {
+            app.is_funded = true;
+            double btc = static_cast<double>(sats) / 1e8;
+            char btc_str[64];
+            std::snprintf(btc_str, sizeof(btc_str), "FUNDED! Balance: %.8f BTC", btc);
+            app.balance_status = btc_str;
+          } else {
+            app.is_funded = false;
+            app.balance_status = "Active (Empty / 0 BTC)";
+          }
+        } else {
+          app.balance_status = "Address not found";
+        }
+      } catch (const std::exception& e) {
+        app.checking_balance = false;
+        app.balance_status = std::string("Check failed: ") + e.what();
+      }
+    }
+  }
+
+  if (app.is_funded) {
+    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Status: %s", app.balance_status.c_str());
+  } else {
+    ImGui::TextDisabled("Status: %s", app.balance_status.c_str());
+  }
+
   ImGui::InputText("Range Start (hex)", app.range_start_buf, sizeof(app.range_start_buf));
   ImGui::InputText("Range End (hex)", app.range_end_buf, sizeof(app.range_end_buf));
   ImGui::InputScalar("Chunk Size", ImGuiDataType_U64, &app.chunk_size_u64);
@@ -268,14 +371,13 @@ void DrawConfigPanel(AppState& app, const GuiStats& stats) {
   // gpu option visible but disabled
   if (ImGui::Combo("Engine", &app.engine_idx, engines, 2)) {
     if (app.engine_idx == 1) {
-      // revert to cpu if gpu not available
       app.engine_idx = 0;
     }
   }
   if (app.engine_idx == 1) {
     app.engine_idx = 0;
   }
-  ImGui::TextWrapped("(GPU backend ships in Phase 4 — CPU only for now)");
+  ImGui::TextDisabled("(CPU-only build. Rebuild with -DPUZZLE71_BUILD_CUDA=ON for GPU)");
 #endif
   ImGui::InputText("Output Dir", app.output_dir_buf, sizeof(app.output_dir_buf));
   ImGui::InputText("Prefix Hex (csv)", app.prefix_hex_buf, sizeof(app.prefix_hex_buf));
@@ -402,6 +504,25 @@ void DrawTelemetryPanel(AppState& app, const GuiStats& stats) {
   ImGui::Text("Matches found  : %llu", static_cast<unsigned long long>(stats.matches_found));
   ImGui::Text("Elapsed        : %.1f s", stats.elapsed_seconds);
 
+  if (!stats.current_range_start.empty() && !stats.current_range_end.empty()) {
+    ImGui::Text("Current Chunk  : %s : %s",
+                stats.current_range_start.c_str(),
+                stats.current_range_end.c_str());
+  }
+  if (stats.state == GuiState::Running && stats.current_chunk_progress > 0.0) {
+    ImGui::ProgressBar(static_cast<float>(stats.current_chunk_progress),
+                       ImVec2(-1.0f, 0.0f));
+  }
+
+  if (app.alert_funded_prefix) {
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f),
+                       "*** FOUND FUNDED PREFIX! Check prefix_found.txt ***");
+    for (const auto& fa : app.funded_prefixes_found) {
+      ImGui::BulletText("%s", fa.c_str());
+    }
+  }
+
   if (stats.state == GuiState::Error && !stats.last_error.empty()) {
     std::snprintf(app.last_error_buf, sizeof(app.last_error_buf),
                   "%s", stats.last_error.c_str());
@@ -432,6 +553,17 @@ void DrawTelemetryPanel(AppState& app, const GuiStats& stats) {
     if (ImGui::Button("Open Matches")) {
       ShellExecuteA(NULL, "open",
                     app.controller->foundMatchesPath().string().c_str(),
+                    NULL, NULL, SW_SHOWNORMAL);
+    }
+    ImGui::EndDisabled();
+
+    std::error_code ec_pfx;
+    bool has_prefix_matches = std::filesystem::exists(app.controller->foundMatchesPath().parent_path() / "prefix_found.txt", ec_pfx);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!has_prefix_matches);
+    if (ImGui::Button("Open Prefix List")) {
+      ShellExecuteA(NULL, "open",
+                    (app.controller->foundMatchesPath().parent_path() / "prefix_found.txt").string().c_str(),
                     NULL, NULL, SW_SHOWNORMAL);
     }
     ImGui::EndDisabled();
@@ -507,6 +639,22 @@ int main(int, char**) {
   ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
   AppState app;
+  try {
+    app.puzzles = PuzzleDatabase::load("");
+    for (size_t i = 0; i < app.puzzles.size(); ++i) {
+      if (app.puzzles[i].id == 71) {
+        app.selected_puzzle_idx = static_cast<int>(i);
+        break;
+      }
+    }
+    if (app.selected_puzzle_idx >= 0) {
+      const auto& p = app.puzzles[app.selected_puzzle_idx];
+      std::snprintf(app.address_buf, sizeof(app.address_buf), "%s", p.address.c_str());
+      std::snprintf(app.range_start_buf, sizeof(app.range_start_buf), "%s", p.start_hex.c_str());
+      std::snprintf(app.range_end_buf, sizeof(app.range_end_buf), "%s", p.end_hex.c_str());
+    }
+  } catch (...) {
+  }
   const ImVec4 clear_color = ImVec4(0.10f, 0.10f, 0.12f, 1.00f);
 
   bool done = false;
@@ -546,12 +694,42 @@ int main(int, char**) {
       done = true;
     }
 
-    // 1. Poll controller for live telemetry
+    // 1. Poll controller for live telemetry & pop newly discovered prefixes
     GuiStats stats;
     if (app.controller) {
       stats = app.controller->getStats();
+      auto new_pfx = app.controller->popFoundPrefixes();
+      for (const auto& addr : new_pfx) {
+        app.pending_check_prefixes.push_back(addr);
+      }
     } else {
       stats.state = GuiState::Idle;
+    }
+
+    // Process pending prefixes asynchronously with blockchain.info
+    if (!app.checking_prefix_balance && !app.pending_check_prefixes.empty()) {
+      std::vector<std::string> to_check = std::move(app.pending_check_prefixes);
+      app.pending_check_prefixes.clear();
+      app.checking_prefix_balance = true;
+      app.prefix_balance_future = std::async(std::launch::async, [to_check]() {
+        return NetworkAPI::QueryBalances(to_check);
+      });
+    }
+
+    if (app.checking_prefix_balance && app.prefix_balance_future.valid()) {
+      if (app.prefix_balance_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+        try {
+          auto res = app.prefix_balance_future.get();
+          for (const auto& kv : res) {
+            if (kv.second > 0) {
+              app.funded_prefixes_found.push_back(kv.first);
+              app.alert_funded_prefix = true;
+            }
+          }
+        } catch (...) {
+        }
+        app.checking_prefix_balance = false;
+      }
     }
 
     // 2. Central window

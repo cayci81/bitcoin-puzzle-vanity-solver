@@ -21,6 +21,12 @@ GuiController::GuiController(CliOptions options)
   if (options_.engine != "cpu" && options_.engine != "gpu") {
     throw std::invalid_argument("engine must be 'cpu' or 'gpu'");
   }
+
+  // Hook prefix found notification to push to thread-safe queue
+  options_.on_prefix_found = [this](const std::string& addr) {
+    std::lock_guard<std::mutex> lk(prefix_mu_);
+    found_prefixes_.push_back(addr);
+  };
 }
 
 GuiController::~GuiController() {
@@ -116,6 +122,8 @@ GuiStats GuiController::getStats() const {
     out.elapsed_seconds   = final_snapshot.elapsed_seconds;
     out.rate_keys_per_sec = final_snapshot.rate_keys_per_sec;
     out.matches_found     = final_snapshot.matches_found;
+    out.current_range_start = final_snapshot.current_range_start;
+    out.current_range_end   = final_snapshot.current_range_end;
     return out;
   }
 
@@ -128,9 +136,21 @@ GuiStats GuiController::getStats() const {
     out.elapsed_seconds   = ss.elapsed_seconds;
     out.rate_keys_per_sec = ss.rate_keys_per_sec;
     out.matches_found     = ss.matches_found;
+    out.current_range_start = ss.current_range_start;
+    out.current_range_end   = ss.current_range_end;
+    if (options_.chunk_size > 0) {
+      out.current_chunk_progress = static_cast<double>(ss.keys_scanned % options_.chunk_size) / static_cast<double>(options_.chunk_size);
+    }
   }
 
   return out;
+}
+
+std::vector<std::string> GuiController::popFoundPrefixes() {
+  std::lock_guard<std::mutex> lk(prefix_mu_);
+  std::vector<std::string> result = std::move(found_prefixes_);
+  found_prefixes_.clear();
+  return result;
 }
 
 std::filesystem::path GuiController::foundMatchesPath() const {

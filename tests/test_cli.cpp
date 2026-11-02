@@ -684,3 +684,15 @@ TEST(CliParseArgsTest, AddressFileAndPrefixFileFlagsAreParsed) {
   EXPECT_EQ(parsed.options.address_file, a);
   EXPECT_EQ(parsed.options.prefix_file, p);
 }
+
+TEST(CliParseArgsTest, PuzzleFlagLoadsCorrectly) {
+  ParsedArgs parsed = CallParseArgs({"--puzzle", "71"});
+  EXPECT_EQ(parsed.options.puzzle_id, 71);
+  EXPECT_EQ(parsed.options.address, "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU");
+  EXPECT_EQ(parsed.options.range_start.ToHex(), "400000000000000000");
+  EXPECT_EQ(parsed.options.range_end.ToHex(), "7fffffffffffffffff");
+}
+
+TEST(CliParseArgsTest, PuzzleFlagUnknownThrows) {
+  EXPECT_THROW(CallParseArgs({"--puzzle", "999999"}), std::invalid_argument);
+}
