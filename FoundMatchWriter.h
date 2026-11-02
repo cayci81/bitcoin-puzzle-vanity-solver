@@ -63,10 +63,15 @@ class FoundMatchWriter {
   // Path of the current match file.
   const std::filesystem::path& outputPath() const;
 
+  // Path of the human-readable vanity prefix match file (prefix_found.txt).
+  std::filesystem::path prefixOutputPath() const;
+
  private:
   MatchWriterConfig config_;
+  std::filesystem::path prefix_output_path_;
   mutable std::mutex mutex_;
   std::FILE* file_ = nullptr;
+  std::FILE* prefix_file_ = nullptr;
 };
 
 }  // namespace puzzle

@@ -25,6 +25,8 @@ struct CliOptions {
   std::string address;                    // full target address (optional if prefix_b58 set)
   std::vector<std::string> prefix_b58;    // repeatable --prefix-b58 values
   std::string prefix_hex_csv;             // comma-separated hex prefixes for HexPrefixFilter
+  std::filesystem::path address_file;     // --address-file: one full P2PKH address per line
+  std::filesystem::path prefix_file;      // --prefix-file: one hex or Base58 prefix per line
   RangeKey range_start;
   RangeKey range_end;
   uint64_t chunk_size = 100'000'000;

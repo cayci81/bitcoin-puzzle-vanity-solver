@@ -89,7 +89,9 @@ SolverExitReason PuzzleSolver::run() {
         rec.kind = MatchKind::Prefix;
         rec.matched_prefix = match_res.matched_prefix;
         rec.gpu_id = config_.worker_id;
-        // Never pass private key for prefix match
+        if (i < result.matched_privkeys_hex.size()) {
+          rec.private_key_hex = result.matched_privkeys_hex[i];
+        }
         writer_->recordMatch(rec);
       } else if (match_res.kind == MatchKind::Full) {
         matches_found_.fetch_add(1, std::memory_order_relaxed);

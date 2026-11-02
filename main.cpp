@@ -38,6 +38,7 @@
 #include "RandomChunkGenerator.h"
 #include "RangeKey.h"
 #include "SECP256K1.h"
+#include "TargetListLoader.h"
 #include "hash/sha256.h"
 
 namespace puzzle::cli {
@@ -268,6 +269,8 @@ void PrintHelp() {
       << "  --max-chunks <N>                 Stop after N chunks (0 = unlimited)\n"
       << "  --prefix-hex <csv>               Comma-separated hash160 hex prefixes (e.g. 5abc,6123)\n"
       << "  --prefix-b58 <prefix>            Base58 address prefix (repeatable, e.g. 1PWo3)\n"
+      << "  --address-file <path>            File of full P2PKH addresses (one per line, # comments)\n"
+      << "  --prefix-file <path>             File of hex or Base58 prefixes (one per line, # comments)\n"
       << "  --help                           Show this help message and exit\n"
       << "  --version                        Show version string and exit\n";
 }
@@ -503,6 +506,12 @@ ParsedArgs ParseArgs(int argc, char** argv) {
       std::string pfx = require_value(i, arg);
       parsed.options.prefix_b58.push_back(pfx);
       (void)AddressMatcher(parsed.options.prefix_b58, std::nullopt);
+    } else if (arg == "--address-file") {
+      parsed.options.address_file = require_value(i, arg);
+      (void)TargetListLoader::loadAddresses(parsed.options.address_file);
+    } else if (arg == "--prefix-file") {
+      parsed.options.prefix_file = require_value(i, arg);
+      (void)TargetListLoader::loadPrefixes(parsed.options.prefix_file);
     } else {
       throw std::invalid_argument("Unknown flag: " + arg);
     }
@@ -535,44 +544,59 @@ SolverContext::SolverContext(const CliOptions& opts) : options(opts) {
   secp = std::make_shared<Secp256K1>();
   secp->Init();
 
-  // 2. HexPrefixFilter::parse(options.prefix_hex_csv).
-  HexPrefixFilter hex_filter = HexPrefixFilter::parse(options.prefix_hex_csv);
+  // 2. Gather all targets: single flags + file inputs (deduplicated).
+  std::vector<std::string> full_addresses;
+  auto add_unique = [](std::vector<std::string>& v, const std::string& s) {
+    if (std::find(v.begin(), v.end(), s) == v.end()) v.push_back(s);
+  };
+  if (!options.address.empty()) add_unique(full_addresses, options.address);
+  if (!options.address_file.empty()) {
+    for (const auto& a : TargetListLoader::loadAddresses(options.address_file)) {
+      add_unique(full_addresses, a);
+    }
+  }
 
-  // Validate Base58Check checksum and P2PKH version byte (0x00) whenever a
-  // full target address is provided.
-  std::vector<unsigned char> decoded_addr;
-  if (!options.address.empty()) {
-    if (!DecodeBase58(options.address, decoded_addr) ||
-        decoded_addr.size() != 25 || decoded_addr[0] != 0x00) {
+  std::vector<std::string> hex_prefixes =
+      HexPrefixFilter::parse(options.prefix_hex_csv).prefixes();
+  std::vector<std::string> b58_prefixes;
+  for (const auto& p : options.prefix_b58) add_unique(b58_prefixes, p);
+  if (!options.prefix_file.empty()) {
+    LoadedPrefixes lp = TargetListLoader::loadPrefixes(options.prefix_file);
+    for (const auto& h : lp.hex_prefixes) add_unique(hex_prefixes, h);
+    for (const auto& b : lp.base58_prefixes) add_unique(b58_prefixes, b);
+  }
+  HexPrefixFilter hex_filter = HexPrefixFilter::parse(hex_prefixes);
+
+  // Validate Base58Check checksum and P2PKH version byte (0x00) for every
+  // full target address; collect hash160 prefix16 slots.
+  std::vector<uint16_t> address_prefix16;
+  for (const auto& addr : full_addresses) {
+    std::vector<unsigned char> decoded_addr;
+    if (!DecodeBase58(addr, decoded_addr) || decoded_addr.size() != 25 ||
+        decoded_addr[0] != 0x00) {
       throw std::invalid_argument(
-          "invalid P2PKH target address (bad length or version byte): " +
-          options.address);
+          "invalid P2PKH target address (bad length or version byte): " + addr);
     }
     uint8_t expected_checksum[4] = {0};
     sha256_checksum(decoded_addr.data(), 21, expected_checksum);
     if (std::memcmp(expected_checksum, decoded_addr.data() + 21, 4) != 0) {
       throw std::invalid_argument(
-          "invalid P2PKH target address (Base58Check checksum mismatch): " +
-          options.address);
+          "invalid P2PKH target address (Base58Check checksum mismatch): " + addr);
     }
+    const unsigned char* h160 = decoded_addr.data() + 1;  // skip version byte
+    address_prefix16.push_back(
+        static_cast<uint16_t>(h160[0] | (static_cast<uint16_t>(h160[1]) << 8)));
   }
 
-  // Fix 1: Narrow gpu_table when --prefix-hex is empty and --address is set.
-  if (options.prefix_hex_csv.empty() &&
-      !options.address.empty() &&
-      options.prefix_b58.empty()) {
-    // Narrow: extract verified hash160 and set exactly one prefix16 slot.
-    const unsigned char* h160 = decoded_addr.data() + 1;  // skip version byte
+  // Narrow gpu_table when no hex prefixes are given and only full addresses
+  // (no Base58 prefixes) are targeted: set prefix16 of ALL addresses.
+  if (hex_prefixes.empty() && !full_addresses.empty() && b58_prefixes.empty()) {
     gpu_table.assign(65536, 0);
-    gpu_table[h160[0] | (static_cast<uint16_t>(h160[1]) << 8)] = 1;
-  } else if (options.prefix_hex_csv.empty() &&
-             !options.prefix_b58.empty() &&
-             options.address.empty()) {
-    // Base58-prefix-only mode: cannot narrow gpu_table (no single hash160
-    // to target). CpuEngine must scan with an all-ones filter and Base58-
-    // encode every key: acceptable for --prefix-b58 development/testing
-    // but extremely slow. GpuEngine rejects dense tables outright, so
-    // --engine gpu is not supported in this mode.
+    for (uint16_t p16 : address_prefix16) gpu_table[p16] = 1;
+  } else if (hex_prefixes.empty() && !b58_prefixes.empty() &&
+             full_addresses.empty()) {
+    // Base58-prefix-only mode: cannot narrow gpu_table (dense). GpuEngine
+    // rejects dense tables, so --engine gpu is not supported in this mode.
     if (options.engine == "gpu") {
       throw std::invalid_argument(
           "--engine gpu requires a specific target: pass --address <addr> "
@@ -582,13 +606,14 @@ SolverContext::SolverContext(const CliOptions& opts) : options(opts) {
     warn_dense_b58_only = true;
   } else {
     gpu_table = hex_filter.buildGpuTable();
+    // Make sure full addresses are never filtered out by a hex-only table.
+    if (!hex_prefixes.empty() && !full_addresses.empty()) {
+      for (uint16_t p16 : address_prefix16) gpu_table[p16] = 1;
+    }
   }
 
-  // 3. AddressMatcher(options.prefix_b58, options.address.empty() ? std::nullopt : options.address).
-  std::optional<std::string> full_addr =
-      options.address.empty() ? std::nullopt
-                              : std::make_optional(options.address);
-  matcher = std::make_shared<AddressMatcher>(options.prefix_b58, full_addr);
+  // 3. AddressMatcher over all full addresses and Base58 prefixes.
+  matcher = std::make_shared<AddressMatcher>(b58_prefixes, full_addresses);
 
   // 4. RandomChunkGenerator with GeneratorConfig built from options.
   // Fix 4: Do NOT clamp gpu_stride to chunk_size; let RandomChunkGenerator
@@ -636,7 +661,15 @@ SolverContext::SolverContext(const CliOptions& opts) : options(opts) {
           "GPU engine not compiled in; rebuild with "
           "-DPUZZLE71_BUILD_CUDA=ON");
     }
-    engine = std::make_shared<GpuEngine>(secp, gpu_table, options.gpu_id);
+    try {
+      engine = std::make_shared<GpuEngine>(secp, gpu_table, options.gpu_id);
+    } catch (const std::runtime_error& e) {
+      if (std::string(e.what()).find("popcount") != std::string::npos) {
+        throw std::runtime_error(
+            "Too many prefixes for GPU. Reduce prefixes to <= 64 or use CPU mode.");
+      }
+      throw;
+    }
   } else {
     throw std::invalid_argument("unknown --engine value: " + options.engine);
   }

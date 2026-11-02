@@ -17,6 +17,9 @@ class HexPrefixFilter {
   // parse("") returns an empty filter that matches all hashes.
   static HexPrefixFilter parse(const std::string& csv);
 
+  // Parses a vector of hex prefixes (e.g. loaded from a file).
+  static HexPrefixFilter parse(const std::vector<std::string>& prefixes);
+
   bool empty() const;
   const std::vector<std::string>& prefixes() const;
 
@@ -56,16 +59,21 @@ struct MatchResult {
 };
 
 // Host CPU Base58 address matcher.
-// Matches against optional full target address and/or list of Base58 prefixes.
+// Matches against optional full target addresses and/or list of Base58 prefixes.
 // Fully configurable and independent of any hard-coded address.
 class AddressMatcher {
  public:
   // Throws std::invalid_argument if any prefix or address contains invalid Base58 characters
-  // (e.g. '0', 'O', 'I', 'l') or if a prefix is empty.
+  // (e.g. '0', 'O', 'I', 'l') or if a prefix is empty, or if a full address fails Base58Check.
   AddressMatcher(std::vector<std::string> base58_prefixes,
                  std::optional<std::string> full_address);
 
+  AddressMatcher(std::vector<std::string> base58_prefixes,
+                 std::vector<std::string> full_addresses);
+
   bool isConfigured() const;
+  const std::vector<std::string>& fullAddresses() const { return full_addresses_; }
+  const std::vector<std::string>& prefixes() const { return prefixes_; }
 
   // Classifies an address:
   // Full match takes precedence over prefix matches.
@@ -74,7 +82,7 @@ class AddressMatcher {
 
  private:
   std::vector<std::string> prefixes_;
-  std::optional<std::string> full_address_;
+  std::vector<std::string> full_addresses_;
 };
 
 }  // namespace puzzle

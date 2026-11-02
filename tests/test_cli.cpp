@@ -561,3 +561,126 @@ TEST(CliIntegrationTest, RunSolverInvalidAddressChecksumThrows) {
 
   EXPECT_THROW(RunSolver(options), std::invalid_argument);
 }
+
+namespace {
+std::vector<std::string> ReadTextLines(const fs::path& p) {
+  std::vector<std::string> out;
+  std::ifstream in(p);
+  std::string line;
+  while (std::getline(in, line)) {
+    if (!line.empty()) out.push_back(line);
+  }
+  return out;
+}
+}  // namespace
+
+TEST(CliIntegrationTest, AddressFileWithMultipleTargetsFindsKnownKey) {
+  TempDir temp_dir;
+  const std::string target_addr = CompressedAddressForHexKey("ABCD");
+  const std::string other_addr = CompressedAddressForHexKey("1234");
+  const auto list = temp_dir.path() / "addrs.txt";
+  {
+    std::ofstream out(list);
+    out << "# targets\n" << other_addr << "\n\n" << target_addr << "\n";
+  }
+
+  CliOptions options;
+  options.range_start = RangeKey::FromHex("AB00");
+  options.range_end = RangeKey::FromHex("ABFF");
+  options.chunk_size = 256;
+  options.gpu_stride = 256;
+  options.seed = 1;
+  options.address_file = list;
+  options.engine = "cpu";
+  options.output_dir = temp_dir.path() / "out";
+
+  ::testing::internal::CaptureStderr();
+  RunResult res = RunSolver(options);
+  std::string captured = ::testing::internal::GetCapturedStderr();
+
+  EXPECT_EQ(res.reason, SolverExitReason::FullMatchFound);
+  EXPECT_NE(captured.find("gpu_table  : 2 active"), std::string::npos) << captured;
+  auto lines = ReadJsonLines(options.output_dir / "found_matches.jsonl");
+  ASSERT_EQ(lines.size(), 1U);
+  EXPECT_EQ(lines[0].at("address").get<std::string>(), target_addr);
+  EXPECT_EQ(lines[0].at("private_key_hex").get<std::string>(), "ABCD");
+}
+
+TEST(CliIntegrationTest, PrefixFileProducesPrefixFoundTxt) {
+  TempDir temp_dir;
+  const std::string target_addr = CompressedAddressForHexKey("ABCD");
+  const std::string hex_pfx4 = Hash160Prefix4HexForHexKey("ABCD");
+  const std::string b58_pfx = target_addr.substr(0, 5);
+  const auto list = temp_dir.path() / "prefixes.txt";
+  {
+    std::ofstream out(list);
+    out << "# vanity\n" << hex_pfx4 << "\n" << b58_pfx << "\n";
+  }
+
+  CliOptions options;
+  options.range_start = RangeKey::FromHex("AB00");
+  options.range_end = RangeKey::FromHex("ABFF");
+  options.chunk_size = 256;
+  options.gpu_stride = 256;
+  options.seed = 1;
+  options.prefix_file = list;
+  options.engine = "cpu";
+  options.output_dir = temp_dir.path() / "out";
+
+  ::testing::internal::CaptureStderr();
+  RunResult res = RunSolver(options);
+  ::testing::internal::GetCapturedStderr();
+
+  EXPECT_EQ(res.reason, SolverExitReason::Exhausted);
+  auto txt = ReadTextLines(options.output_dir / "prefix_found.txt");
+  ASSERT_GE(txt.size(), 1u);
+  bool saw_abcd = false;
+  for (const auto& l : txt) {
+    if (l.find("Address: " + target_addr) != std::string::npos &&
+        l.find("Matched Prefix: " + b58_pfx) != std::string::npos &&
+        l.find("Private Key: ABCD") != std::string::npos) {
+      saw_abcd = true;
+    }
+  }
+  EXPECT_TRUE(saw_abcd);
+}
+
+TEST(CliIntegrationTest, BadAddressFileLineThrowsRuntimeErrorWithLineNumber) {
+  TempDir temp_dir;
+  const auto list = temp_dir.path() / "bad.txt";
+  {
+    std::ofstream out(list);
+    out << "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU\nnot-an-address\n";
+  }
+  CliOptions options;
+  options.range_start = RangeKey::FromHex("AB00");
+  options.range_end = RangeKey::FromHex("ABFF");
+  options.chunk_size = 256;
+  options.gpu_stride = 256;
+  options.address_file = list;
+  options.output_dir = temp_dir.path() / "out";
+  try {
+    RunSolver(options);
+    FAIL() << "expected std::runtime_error";
+  } catch (const std::runtime_error& e) {
+    EXPECT_NE(std::string(e.what()).find("line 2"), std::string::npos);
+  }
+}
+
+TEST(CliParseArgsTest, AddressFileAndPrefixFileFlagsAreParsed) {
+  TempDir temp_dir;
+  const auto a = temp_dir.path() / "a.txt";
+  const auto p = temp_dir.path() / "p.txt";
+  {
+    std::ofstream(a) << "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU\n";
+    std::ofstream(p) << "5abc\n1PWo\n";
+  }
+  std::string as = a.string(), ps = p.string();
+  std::vector<std::string> args = {"prog", "--range-hex", "AB00:ABFF",
+                                   "--address-file", as, "--prefix-file", ps};
+  std::vector<char*> argv;
+  for (auto& s : args) argv.push_back(s.data());
+  ParsedArgs parsed = ParseArgs(static_cast<int>(argv.size()), argv.data());
+  EXPECT_EQ(parsed.options.address_file, a);
+  EXPECT_EQ(parsed.options.prefix_file, p);
+}

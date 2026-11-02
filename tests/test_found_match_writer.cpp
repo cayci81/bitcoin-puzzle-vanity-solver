@@ -297,3 +297,53 @@ TEST(FoundMatchWriter, WriteFailureOnFullMatchFallsBackToStderrAndFailsLoudly) {
     FAIL() << "Expected std::runtime_error";
   }
 }
+
+TEST(FoundMatchWriter, PrefixMatchWritesHumanReadablePrefixFoundTxt) {
+  puzzle::test::TempDir temp_dir;
+  MatchWriterConfig cfg;
+  cfg.output_path = temp_dir.path() / "found_matches.jsonl";
+  FoundMatchWriter writer(cfg);
+
+  FoundMatchRecord rec;
+  rec.address = "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU";
+  rec.kind = MatchKind::Prefix;
+  rec.matched_prefix = "1PWo";
+  rec.private_key_hex = "ABCD";
+  rec.timestamp = "2026-11-01T12:00:00.000Z";
+  writer.recordMatch(rec);
+
+  const auto txt = temp_dir.path() / "prefix_found.txt";
+  EXPECT_EQ(writer.prefixOutputPath(), txt);
+  auto lines = puzzle::test::ReadLines(txt);
+  ASSERT_EQ(lines.size(), 1u);
+  EXPECT_EQ(lines[0],
+            "[2026-11-01T12:00:00.000Z] Address: 1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU"
+            " | Matched Prefix: 1PWo | Private Key: ABCD");
+
+  // JSONL still gets the prefix record and never contains the private key.
+  auto jl = puzzle::test::ReadLines(cfg.output_path);
+  ASSERT_EQ(jl.size(), 1u);
+  EXPECT_FALSE(nlohmann::json::parse(jl[0]).contains("private_key_hex"));
+}
+
+TEST(FoundMatchWriter, FullMatchIsNotWrittenToPrefixFoundTxt) {
+  puzzle::test::TempDir temp_dir;
+  std::atomic<bool> stop_flag{false};
+  MatchWriterConfig cfg;
+  cfg.output_path = temp_dir.path() / "found_matches.jsonl";
+  cfg.stop_flag = &stop_flag;
+  FoundMatchWriter writer(cfg);
+
+  FoundMatchRecord rec;
+  rec.address = "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU";
+  rec.kind = MatchKind::Full;
+  rec.matched_prefix = rec.address;
+  rec.private_key_hex = "deadbeef";
+
+  ::testing::internal::CaptureStderr();
+  writer.recordMatch(rec);
+  ::testing::internal::GetCapturedStderr();
+
+  EXPECT_FALSE(std::filesystem::exists(temp_dir.path() / "prefix_found.txt"));
+  EXPECT_EQ(puzzle::test::ReadLines(cfg.output_path).size(), 1u);
+}

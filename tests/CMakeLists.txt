@@ -61,7 +61,8 @@ set(TEST_SOURCES
   test_cpu_engine.cpp
   test_gpu_engine.cpp
   test_cli.cpp
-  test_gui_controller.cpp)
+  test_gui_controller.cpp
+  test_target_list_loader.cpp)
 set(PROD_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/../GuiController.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../Int.cpp
@@ -73,6 +74,7 @@ set(PROD_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/../RandomChunkGenerator.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../JsonRangeLogger.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../PrefixFilter.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../TargetListLoader.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../FoundMatchWriter.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../PuzzleSolver.cpp
   # CpuEngine + GpuEngine + the VanitySearch secp256k1 CPU path it adapts.

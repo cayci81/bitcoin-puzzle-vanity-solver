@@ -303,3 +303,89 @@ TEST(AddressMatcher, RejectsCharactersOutsideBase58Alphabet) {
   EXPECT_THROW(AddressMatcher({}, std::string("1PWo0JeB9jrGwfHDNpdGK54CRas7fsVzXU")),
                std::invalid_argument);
 }
+
+// ====================================================== multi-target (Phase 6.1)
+
+#include "SECP256K1.h"
+
+namespace {
+
+std::string AddressForKey(Secp256K1& secp, uint64_t k) {
+  Int key(k);
+  Point pub = secp.ComputePublicKey(&key);
+  unsigned char h160[20];
+  secp.GetHash160(P2PKH, true, pub, h160);
+  return secp.GetAddress(P2PKH, true, h160);
+}
+
+}  // namespace
+
+TEST(AddressMatcherMultiTarget, TenFullAddressesAndTenPrefixesIdentifyTheHit) {
+  Secp256K1 secp;
+  secp.Init();
+
+  std::vector<std::string> full;
+  for (uint64_t k = 1; k <= 10; ++k) full.push_back(AddressForKey(secp, k));
+
+  // Ten distinct 8-char Base58 prefixes taken from keys 101..110.
+  std::vector<std::string> prefixes;
+  std::vector<std::string> prefix_hits;
+  for (uint64_t k = 101; k <= 110; ++k) {
+    std::string a = AddressForKey(secp, k);
+    prefix_hits.push_back(a);
+    prefixes.push_back(a.substr(0, 8));
+  }
+
+  AddressMatcher m(prefixes, full);
+  EXPECT_TRUE(m.isConfigured());
+  EXPECT_EQ(m.fullAddresses().size(), 10u);
+
+  for (const auto& a : full) {
+    MatchResult r = m.classify(a);
+    EXPECT_EQ(r.kind, MatchKind::Full) << a;
+    EXPECT_EQ(r.matched_prefix, a);
+  }
+  for (size_t i = 0; i < prefix_hits.size(); ++i) {
+    MatchResult r = m.classify(prefix_hits[i]);
+    EXPECT_EQ(r.kind, MatchKind::Prefix) << prefix_hits[i];
+    EXPECT_EQ(r.matched_prefix, prefixes[i]);
+  }
+  EXPECT_EQ(m.classify(AddressForKey(secp, 999)).kind, MatchKind::None);
+}
+
+TEST(AddressMatcherMultiTarget, FullMatchBeatsPrefixAcrossLists) {
+  Secp256K1 secp;
+  secp.Init();
+  const std::string a = AddressForKey(secp, 7);
+  AddressMatcher m({a.substr(0, 6)}, std::vector<std::string>{a});
+  EXPECT_EQ(m.classify(a).kind, MatchKind::Full);
+}
+
+TEST(AddressMatcherMultiTarget, InvalidAddressInVectorThrows) {
+  EXPECT_THROW(AddressMatcher({}, std::vector<std::string>{
+                                      kPuzzle71,
+                                      "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXV"}),
+               std::invalid_argument);
+}
+
+TEST(HexPrefixFilterVector, ParsesVectorAndDeduplicates) {
+  auto f = HexPrefixFilter::parse(std::vector<std::string>{"5ABC", "6123", "5abc"});
+  EXPECT_EQ(f.prefixes(), (std::vector<std::string>{"5abc", "6123"}));
+  EXPECT_TRUE(f.matchesHash160(Hash({0x61, 0x23}).data()));
+  EXPECT_FALSE(f.matchesHash160(Hash({0x61, 0x24}).data()));
+  EXPECT_THROW(HexPrefixFilter::parse(std::vector<std::string>{"5abg"}),
+               std::invalid_argument);
+}
+
+TEST(HexPrefixFilterVector, MoreThan64PrefixesAcceptedForCpuMatching) {
+  std::vector<std::string> many;
+  for (int i = 0; i < 200; ++i) {
+    char buf[8];
+    std::snprintf(buf, sizeof(buf), "%04x", i * 257 % 65536);
+    many.push_back(buf);
+  }
+  auto f = HexPrefixFilter::parse(many);
+  EXPECT_GT(f.prefixes().size(), 64u);
+  EXPECT_TRUE(f.matchesHash160(Hash({0x01, 0x01}).data()));  // "0101" = 1*257
+  EXPECT_FALSE(f.matchesHash160(Hash({0xff, 0xfe}).data()));
+}

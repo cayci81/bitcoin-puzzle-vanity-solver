@@ -63,21 +63,9 @@ uint8_t HexCharToNibble(char c) {
 
 }  // namespace
 
-HexPrefixFilter HexPrefixFilter::parse(const std::string& csv) {
+HexPrefixFilter HexPrefixFilter::parse(const std::vector<std::string>& prefixes) {
   HexPrefixFilter filter;
-  if (csv.empty()) {
-    return filter;
-  }
-
-  // Comma-separated token parser
-  // Reject leading comma, trailing comma, or empty consecutive tokens
-  if (csv.front() == ',' || csv.back() == ',') {
-    throw std::invalid_argument("HexPrefixFilter: empty token around comma");
-  }
-
-  std::stringstream ss(csv);
-  std::string token;
-  while (std::getline(ss, token, ',')) {
+  for (const auto& token : prefixes) {
     std::string trimmed = Trim(token);
     if (trimmed.empty()) {
       throw std::invalid_argument("HexPrefixFilter: empty token");
@@ -122,8 +110,28 @@ HexPrefixFilter HexPrefixFilter::parse(const std::string& csv) {
       filter.decoded_prefixes_.push_back(dp);
     }
   }
-
   return filter;
+}
+
+HexPrefixFilter HexPrefixFilter::parse(const std::string& csv) {
+  if (csv.empty()) {
+    return HexPrefixFilter{};
+  }
+
+  // Comma-separated token parser
+  // Reject leading comma, trailing comma, or empty consecutive tokens
+  if (csv.front() == ',' || csv.back() == ',') {
+    throw std::invalid_argument("HexPrefixFilter: empty token around comma");
+  }
+
+  std::vector<std::string> tokens;
+  std::stringstream ss(csv);
+  std::string token;
+  while (std::getline(ss, token, ',')) {
+    tokens.push_back(token);
+  }
+
+  return parse(tokens);
 }
 
 bool HexPrefixFilter::empty() const {
@@ -204,15 +212,24 @@ uint16_t HexPrefixFilter::prefix16(const uint8_t h[20]) {
 
 AddressMatcher::AddressMatcher(std::vector<std::string> base58_prefixes,
                                std::optional<std::string> full_address)
-    : prefixes_(std::move(base58_prefixes)), full_address_(std::move(full_address)) {
+    : AddressMatcher(
+          std::move(base58_prefixes),
+          full_address.has_value()
+              ? std::vector<std::string>{*std::move(full_address)}
+              : std::vector<std::string>{}) {}
+
+AddressMatcher::AddressMatcher(std::vector<std::string> base58_prefixes,
+                               std::vector<std::string> full_addresses)
+    : prefixes_(std::move(base58_prefixes)),
+      full_addresses_(std::move(full_addresses)) {
   for (const auto& p : prefixes_) {
     if (!IsValidBase58String(p)) {
       throw std::invalid_argument("AddressMatcher: invalid Base58 prefix");
     }
   }
 
-  if (full_address_.has_value()) {
-    if (!IsValidP2pkhAddress(*full_address_)) {
+  for (const auto& addr : full_addresses_) {
+    if (!IsValidP2pkhAddress(addr)) {
       throw std::invalid_argument(
           "AddressMatcher: invalid Base58Check P2PKH full address");
     }
@@ -220,13 +237,15 @@ AddressMatcher::AddressMatcher(std::vector<std::string> base58_prefixes,
 }
 
 bool AddressMatcher::isConfigured() const {
-  return full_address_.has_value() || !prefixes_.empty();
+  return !full_addresses_.empty() || !prefixes_.empty();
 }
 
 MatchResult AddressMatcher::classify(const std::string& address) const {
   // 1. Full address match takes highest priority
-  if (full_address_.has_value() && address == *full_address_) {
-    return MatchResult{MatchKind::Full, *full_address_};
+  for (const auto& full_addr : full_addresses_) {
+    if (address == full_addr) {
+      return MatchResult{MatchKind::Full, full_addr};
+    }
   }
 
   // 2. Base58 prefix match: longest matching prefix wins

@@ -43,7 +43,11 @@ std::string FormatUtcTimestamp(const std::chrono::system_clock::time_point& tp) 
 }  // namespace
 
 FoundMatchWriter::FoundMatchWriter(const MatchWriterConfig& config)
-    : config_(config) {
+    : config_(config),
+      prefix_output_path_(
+          config_.output_path.has_parent_path()
+              ? (config_.output_path.parent_path() / "prefix_found.txt")
+              : std::filesystem::path("prefix_found.txt")) {
   std::error_code ec;
   if (config_.output_path.empty() || std::filesystem::is_directory(config_.output_path, ec)) {
     throw std::runtime_error("FoundMatchWriter: invalid or directory output path: " +
@@ -64,6 +68,10 @@ FoundMatchWriter::FoundMatchWriter(const MatchWriterConfig& config)
 }
 
 FoundMatchWriter::~FoundMatchWriter() {
+  if (prefix_file_) {
+    std::fclose(prefix_file_);
+    prefix_file_ = nullptr;
+  }
   if (file_) {
     std::fclose(file_);
     file_ = nullptr;
@@ -72,6 +80,10 @@ FoundMatchWriter::~FoundMatchWriter() {
 
 const std::filesystem::path& FoundMatchWriter::outputPath() const {
   return config_.output_path;
+}
+
+std::filesystem::path FoundMatchWriter::prefixOutputPath() const {
+  return prefix_output_path_;
 }
 
 void FoundMatchWriter::recordMatch(const FoundMatchRecord& match) {
@@ -134,7 +146,7 @@ void FoundMatchWriter::recordMatch(const FoundMatchRecord& match) {
                                match.address);
     }
   } else {
-    // Prefix match: NO private key, no stderr, no sync, no stop_flag.
+    // Prefix match: NO private key in found_matches.jsonl, no stderr, no sync, no stop_flag.
     if (config_.write_hook) {
       config_.write_hook(line);
     } else {
@@ -145,6 +157,28 @@ void FoundMatchWriter::recordMatch(const FoundMatchRecord& match) {
       }
     }
     std::fflush(file_);
+
+    // Also append human-readable vanity entry to prefix_found.txt
+    if (!prefix_file_) {
+#ifdef _WIN32
+      prefix_file_ = _wfopen(prefix_output_path_.c_str(), L"ab");
+#else
+      prefix_file_ = std::fopen(prefix_output_path_.string().c_str(), "ab");
+#endif
+      if (!prefix_file_) {
+        throw std::runtime_error("FoundMatchWriter: cannot open prefix_found.txt: " +
+                                 prefix_output_path_.string());
+      }
+    }
+    std::string txt_line = "[" + ts + "] Address: " + match.address +
+                           " | Matched Prefix: " + match.matched_prefix +
+                           " | Private Key: " + match.private_key_hex + "\n";
+    size_t txt_written =
+        std::fwrite(txt_line.data(), 1, txt_line.size(), prefix_file_);
+    if (txt_written != txt_line.size()) {
+      throw std::runtime_error("FoundMatchWriter: short write to prefix_found.txt");
+    }
+    std::fflush(prefix_file_);
   }
 }
 
